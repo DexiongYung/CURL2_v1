@@ -221,6 +221,9 @@ def main():
 
     video = VideoRecorder(video_dir if args.save_video else None)
 
+    if not os.path.isdir(args.work_dir):
+        os.makedirs(args.work_dir)
+
     with open(os.path.join(args.work_dir, 'args.json'), 'w') as f:
         json.dump(vars(args), f, sort_keys=True, indent=4)
 
