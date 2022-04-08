@@ -11,7 +11,7 @@ dependencies:
   - pillow=6.1
   - pip:
     - termcolor
-    - git+https://github.com/deepmind/dm_control.git
+    - dm_control
     - git+https://github.com/1nadequacy/dmc2gym.git
     - tb-nightly
     - imageio
