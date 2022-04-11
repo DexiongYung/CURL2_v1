@@ -30,6 +30,14 @@
                 "--batch_size", "128", 
                 "--num_train_steps", "200000"
             ]
+        },
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
         }
     ]
 }
