@@ -42,5 +42,5 @@
     "save_video": true,
     "seed": 23,
     "task_name": "swingup",
-    "work_dir": "."
+    "work_dir": "./logs"
 }
