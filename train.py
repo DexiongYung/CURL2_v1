@@ -205,7 +205,7 @@ def main():
     ts = time.gmtime() 
     ts = time.strftime("%m-%d", ts)    
     env_name = args.domain_name + '_' + args.task_name
-    exp_name = os.path.join(env_name, args.id, ts, str(args.seed), 'train_steps_' + str(args.num_train_steps))
+    exp_name = os.path.join(env_name, args.id, 'seed_' + str(args.seed), 'train_steps_' + str(args.num_train_steps), ts)
     work_dir = os.path.join(args.work_dir, exp_name)
     os.makedirs(work_dir, exist_ok=True)
     
