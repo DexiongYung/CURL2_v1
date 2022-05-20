@@ -1,0 +1,13 @@
+{"episode_reward": 0.0, "episode": 1.0, "duration": 13.227999210357666, "step": 125}
+{"episode_reward": 188.54858664024, "episode": 2.0, "duration": 0.7049686908721924, "step": 250}
+{"episode_reward": 148.42677041475667, "episode": 3.0, "duration": 0.6936869621276855, "step": 375}
+{"episode_reward": 96.18193741935099, "episode": 4.0, "duration": 0.7015016078948975, "step": 500}
+{"episode_reward": 82.30982819659563, "episode": 5.0, "duration": 0.7095410823822021, "step": 625}
+{"episode_reward": 198.98424208864233, "episode": 6.0, "duration": 0.69063401222229, "step": 750}
+{"episode_reward": 159.49821390562659, "episode": 7.0, "duration": 0.719031572341919, "step": 875}
+{"episode_reward": 113.95622178975879, "episode": 8.0, "step": 1000}
+{"duration": 11.87578535079956, "step": 1000}
+{"episode_reward": 89.62519938559855, "episode": 9.0, "batch_reward": 1.0877185239791871, "critic_loss": 2.81214212846756, "actor_loss": -2.0365783011629466, "actor_target_entropy": -1.0, "actor_entropy": 1.106814670184302, "alpha_loss": 0.13378040729061005, "alpha_value": 0.09975927429539817, "duration": 21.97672963142395, "step": 1125}
+{"episode_reward": 212.14364596900833, "episode": 10.0, "batch_reward": 1.100376530647278, "critic_loss": 1.296717071533203, "actor_loss": -2.7161091719904253, "actor_target_entropy": -1.0, "actor_entropy": 1.2714156489218436, "alpha_loss": 0.16121164252681117, "alpha_value": 0.09912778449154669, "duration": 21.80596113204956, "step": 1250}
+{"episode_reward": 88.84105484197947, "episode": 11.0, "batch_reward": 1.1268711676597596, "critic_loss": 1.1804925942420958, "actor_loss": -3.2682435890984913, "actor_target_entropy": -1.0, "actor_entropy": 1.1632912878006223, "alpha_loss": 0.15793149740923018, "alpha_value": 0.0984855755454018, "duration": 22.22718596458435, "step": 1375}
+{"episode_reward": 220.2396826876417, "episode": 12.0, "batch_reward": 1.1445954656600952, "critic_loss": 1.7957562036514283, "actor_loss": -3.8717591762542725, "actor_target_entropy": -1.0, "actor_entropy": 0.9374559348629367, "alpha_loss": 0.14872313675380522, "alpha_value": 0.09787889353690608, "duration": 22.109310150146484, "step": 1500}
