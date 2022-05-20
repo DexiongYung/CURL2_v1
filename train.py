@@ -86,7 +86,7 @@ def evaluate(env, agent, video, num_episodes, L, step, args, work_dir):
             while not done:
                 # center crop image
                 if args.encoder_type == 'pixel' and 'crop' in args.data_augs:
-                    obs = utils.center_crop_image(obs,args.image_size)
+                    obs = utils.center_crop_image(obs, args.image_size)
                 if args.encoder_type == 'pixel' and 'translate' in args.data_augs:
                     # first crop the center with pre_image_size
                     obs = utils.center_crop_image(obs, args.pre_transform_image_size)
@@ -166,7 +166,6 @@ def make_agent(obs_shape, action_shape, args, device):
             detach_encoder=args.detach_encoder,
             latent_dim=args.latent_dim,
             data_augs=args.data_augs
-
         )
     else:
         assert 'agent is not supported: %s' % args.agent
@@ -206,7 +205,7 @@ def main():
     ts = time.gmtime() 
     ts = time.strftime("%m-%d", ts)    
     env_name = args.domain_name + '_' + args.task_name
-    exp_name = env_name + '/' + ts + '/' + str(args.seed) + '/' + args.id
+    exp_name = os.path.join(env_name, ts, str(args.seed), args.id, 'train_steps_' + str(args.num_train_steps))
     work_dir = os.path.join(args.work_dir, exp_name)
     os.makedirs(work_dir, exist_ok=True)
     
@@ -255,7 +254,6 @@ def main():
         device=device
     )
 
-
     L = Logger(work_dir, use_tb=args.save_tb)
 
     episode, episode_reward, done = 0, 0, True
@@ -263,7 +261,7 @@ def main():
 
     for step in range(args.num_train_steps):
         # evaluate agent periodically
-        if step % args.eval_freq == 0 or step == args.num_train_steps - 1:
+        if step % args.eval_freq == 0 or step == args.num_train_steps - 1 and step > 0:
             L.log('eval/episode', episode, step)
             evaluate(env, agent, video, args.num_eval_episodes, L, step, args, work_dir=work_dir)
             if args.save_model:
