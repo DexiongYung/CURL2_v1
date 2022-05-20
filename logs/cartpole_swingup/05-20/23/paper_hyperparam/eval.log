@@ -1,2 +1,0 @@
-{"episode": 0.0, "episode_reward": 61.1546520579883, "eval_time": 12.150012493133545, "mean_episode_reward": 61.1546520579883, "best_episode_reward": 62.26977686812993, "step": 0}
-{"episode": 8.0, "episode_reward": 61.29411059192141, "eval_time": 10.713309288024902, "mean_episode_reward": 61.29411059192141, "best_episode_reward": 62.97107638522227, "step": 1000}
