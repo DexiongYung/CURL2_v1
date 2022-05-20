@@ -5,13 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "train.py PPO",
+            "name": "paper RAD",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
+                "--id", "paper_hyperparam",
                 "--domain_name", "cartpole",
                 "--task_name", "swingup",
                 "--encoder_type", "pixel",
@@ -28,7 +29,10 @@
                 "--actor_lr", "1e-3", 
                 "--eval_freq", "1000",
                 "--batch_size", "512", 
-                "--num_train_steps", "200000"
+                "--num_train_steps", "200000",
+                "--save_tb", "True",
+                "--save_video", "True",
+                "--save_model", "True",
             ]
         },
         {

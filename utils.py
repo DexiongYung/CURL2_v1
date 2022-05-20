@@ -47,14 +47,6 @@ def module_hash(module):
     return result
 
 
-def make_dir(dir_path):
-    try:
-        os.mkdir(dir_path)
-    except OSError:
-        pass
-    return dir_path
-
-
 def preprocess_obs(obs, bits=5):
     """Preprocessing image, see https://arxiv.org/abs/1807.03039."""
     bins = 2**bits

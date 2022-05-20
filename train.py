@@ -2,25 +2,17 @@ import numpy as np
 import torch
 import argparse
 import os
-import math
-import gym
-import sys
-import random
 import time
 import json
 import dmc2gym
-import copy
-
 import utils
 from logger import Logger
 from video import VideoRecorder
-
 from curl_sac import RadSacAgent
-from torchvision import transforms
-import data_augs as rad
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--id', required=True)
     # environment
     parser.add_argument('--domain_name', default='cartpole')
     parser.add_argument('--task_name', default='swingup')
@@ -74,8 +66,6 @@ def parse_args():
     parser.add_argument('--detach_encoder', default=False, action='store_true')
     # data augs
     parser.add_argument('--data_augs', default='crop', type=str)
-
-
     parser.add_argument('--log_interval', default=100, type=int)
     args = parser.parse_args()
     return args
@@ -209,20 +199,18 @@ def main():
     # make directory
     ts = time.gmtime() 
     ts = time.strftime("%m-%d", ts)    
-    env_name = args.domain_name + '-' + args.task_name
-    exp_name = env_name + '-' + ts + '-im' + str(args.image_size) +'-b'  \
-    + str(args.batch_size) + '-s' + str(args.seed)  + '-' + args.encoder_type
+    env_name = args.domain_name + '_' + args.task_name
+    exp_name = env_name + '/' + ts + '/' + str(args.seed) + '/' + args.id
     args.work_dir = args.work_dir + '/'  + exp_name
+    checkpoint_dir = 'checkpoints' + '/' + exp_name
+    video_dir = 'videos' + '/' + exp_name
 
-    utils.make_dir(args.work_dir)
-    video_dir = utils.make_dir(os.path.join(args.work_dir, 'video'))
-    model_dir = utils.make_dir(os.path.join(args.work_dir, 'model'))
-    buffer_dir = utils.make_dir(os.path.join(args.work_dir, 'buffer'))
+    os.makedirs(args.work_dir, exist_ok=True)
+    video_dir = os.makedirs(video_dir, exist_ok=True)
+    model_dir = os.makedirs(checkpoint_dir, exist_ok=True)
+    buffer_dir = os.makedirs(os.path.join(args.work_dir, 'buffer'), exist_ok=True)
 
     video = VideoRecorder(video_dir if args.save_video else None)
-
-    if not os.path.isdir(args.work_dir):
-        os.makedirs(args.work_dir)
 
     with open(os.path.join(args.work_dir, 'args.json'), 'w') as f:
         json.dump(vars(args), f, sort_keys=True, indent=4)
@@ -263,10 +251,9 @@ def main():
 
     for step in range(args.num_train_steps):
         # evaluate agent periodically
-
-        if step % args.eval_freq == 0:
+        if step % args.eval_freq == 0 or step == args.num_train_steps - 1:
             L.log('eval/episode', episode, step)
-            evaluate(env, agent, video, args.num_eval_episodes, L, step,args)
+            evaluate(env, agent, video, args.num_eval_episodes, L, step, args)
             if args.save_model:
                 agent.save_curl(model_dir, step)
             if args.save_buffer:
@@ -278,7 +265,7 @@ def main():
                     L.log('train/duration', time.time() - start_time, step)
                     L.dump(step)
                 start_time = time.time()
-            if step % args.log_interval == 0:
+            if step % args.log_interval == 0 or step == args.num_train_steps - 1:
                 L.log('train/episode_reward', episode_reward, step)
 
             obs = env.reset()
