@@ -30,10 +30,21 @@
                 "--eval_freq", "1000",
                 "--batch_size", "512", 
                 "--num_train_steps", "200000",
-                "--save_tb", "True",
-                "--save_video", "True",
-                "--save_model", "True",
+                "--save_tb",
+                "--save_video",
+                "--save_model",
+                "--log_interval", "1",
+                "--config_file", "./configs/paper_hyperparam.json"
             ]
+        },
+        {
+            "name": "Train w config",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/paper_hyperparam.json"]
         },
         {
             "name": "Python: Current File",

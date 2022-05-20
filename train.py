@@ -12,7 +12,7 @@ from curl_sac import RadSacAgent
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--id', required=True)
+    parser.add_argument('--id', default='no_name')
     # environment
     parser.add_argument('--domain_name', default='cartpole')
     parser.add_argument('--task_name', default='swingup')
@@ -67,11 +67,12 @@ def parse_args():
     # data augs
     parser.add_argument('--data_augs', default='crop', type=str)
     parser.add_argument('--log_interval', default=100, type=int)
+    parser.add_argument('--config_file', default=None, type=str)
     args = parser.parse_args()
     return args
 
 
-def evaluate(env, agent, video, num_episodes, L, step, args):
+def evaluate(env, agent, video, num_episodes, L, step, args, work_dir):
     all_ep_rewards = []
 
     def run_eval_loop(sample_stochastically=True):
@@ -111,7 +112,7 @@ def evaluate(env, agent, video, num_episodes, L, step, args):
         L.log('eval/' + prefix + 'mean_episode_reward', mean_ep_reward, step)
         L.log('eval/' + prefix + 'best_episode_reward', best_ep_reward, step)
 
-        filename = args.work_dir + '/' + args.domain_name + '--'+args.task_name + '-' + args.data_augs + '--s' + str(args.seed) + '--eval_scores.npy'
+        filename = os.path.join(work_dir, 'eval_scores.npy')
         key = args.domain_name + '-' + args.task_name + '-' + args.data_augs
         try:
             log_data = np.load(filename,allow_pickle=True)
@@ -129,7 +130,7 @@ def evaluate(env, agent, video, num_episodes, L, step, args):
         log_data[key][step]['std_ep_reward'] = std_ep_reward 
         log_data[key][step]['env_step'] = step * args.action_repeat
 
-        np.save(filename,log_data)
+        np.save(filename, log_data)
 
     run_eval_loop(sample_stochastically=False)
     L.dump(step)
@@ -172,6 +173,11 @@ def make_agent(obs_shape, action_shape, args, device):
 
 def main():
     args = parse_args()
+
+    if args.config_file:
+        config_dict = json.load(open(args.config_file))
+        args.__dict__ = config_dict
+
     if args.seed == -1: 
         args.__dict__["seed"] = np.random.randint(1,1000000)
     utils.set_seed_everywhere(args.seed)
@@ -201,18 +207,24 @@ def main():
     ts = time.strftime("%m-%d", ts)    
     env_name = args.domain_name + '_' + args.task_name
     exp_name = env_name + '/' + ts + '/' + str(args.seed) + '/' + args.id
-    args.work_dir = args.work_dir + '/'  + exp_name
-    checkpoint_dir = 'checkpoints' + '/' + exp_name
-    video_dir = 'videos' + '/' + exp_name
+    work_dir = os.path.join(args.work_dir, exp_name)
+    os.makedirs(work_dir, exist_ok=True)
+    
+    if args.save_model:
+        checkpoint_dir = os.path.join('./checkpoints', exp_name)
+        os.makedirs(checkpoint_dir, exist_ok=True)
 
-    os.makedirs(args.work_dir, exist_ok=True)
-    video_dir = os.makedirs(video_dir, exist_ok=True)
-    model_dir = os.makedirs(checkpoint_dir, exist_ok=True)
-    buffer_dir = os.makedirs(os.path.join(args.work_dir, 'buffer'), exist_ok=True)
+    if args.save_video:
+        video_dir = os.path.join('./videos', exp_name)
+        os.makedirs(video_dir, exist_ok=True)
+
+    if args.save_buffer:
+        buffer_dir = os.path.join('./buffers', exp_name)
+        os.makedirs(buffer_dir, exist_ok=True)
 
     video = VideoRecorder(video_dir if args.save_video else None)
 
-    with open(os.path.join(args.work_dir, 'args.json'), 'w') as f:
+    with open(os.path.join(work_dir, 'args.json'), 'w') as f:
         json.dump(vars(args), f, sort_keys=True, indent=4)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -244,7 +256,7 @@ def main():
     )
 
 
-    L = Logger(args.work_dir, use_tb=args.save_tb)
+    L = Logger(work_dir, use_tb=args.save_tb)
 
     episode, episode_reward, done = 0, 0, True
     start_time = time.time()
@@ -253,9 +265,9 @@ def main():
         # evaluate agent periodically
         if step % args.eval_freq == 0 or step == args.num_train_steps - 1:
             L.log('eval/episode', episode, step)
-            evaluate(env, agent, video, args.num_eval_episodes, L, step, args)
+            evaluate(env, agent, video, args.num_eval_episodes, L, step, args, work_dir=work_dir)
             if args.save_model:
-                agent.save_curl(model_dir, step)
+                agent.save_curl(checkpoint_dir, step)
             if args.save_buffer:
                 replay_buffer.save(buffer_dir)
 
