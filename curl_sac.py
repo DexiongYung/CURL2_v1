@@ -9,6 +9,18 @@ import data_augs as rad
 
 LOG_FREQ = 10000
 
+aug_to_func = {
+    'crop':rad.random_crop,
+    'grayscale':rad.random_grayscale,
+    'cutout':rad.random_cutout,
+    'cutout_color':rad.random_cutout_color,
+    'flip':rad.random_flip,
+    'rotate':rad.random_rotation,
+    'rand_conv':rad.random_convolution,
+    'color_jitter':rad.random_color_jitter,
+    'translate':rad.random_translate,
+    'no_aug':rad.no_aug,
+    }
         
 def gaussian_logprob(noise, log_std):
     """Compute Gaussian log probability."""
@@ -278,20 +290,6 @@ class RadSacAgent(object):
         self.data_augs = data_augs
 
         self.augs_funcs = {}
-
-        aug_to_func = {
-                'crop':rad.random_crop,
-                'grayscale':rad.random_grayscale,
-                'cutout':rad.random_cutout,
-                'cutout_color':rad.random_cutout_color,
-                'flip':rad.random_flip,
-                'rotate':rad.random_rotation,
-                'rand_conv':rad.random_convolution,
-                'color_jitter':rad.random_color_jitter,
-                'translate':rad.random_translate,
-                'no_aug':rad.no_aug,
-            }
-        
         augs_list = self.data_augs.split('-')
 
         if neural_augs == 'mix-up':
@@ -299,12 +297,14 @@ class RadSacAgent(object):
                 raise NotImplementedError('Crop or Translate not supported in neural augmenter yet')
             self.neural_aug = torch.nn.Sequential(
                     torch.nn.Linear(1, len(augs_list)),
-                    torch.nn.functional.softmax()
+                    torch.nn.Softmax()
                 ).to(device)
             self.neural_aug_input = torch.ones(1).to(device)
             self.neural_aug_optimizer = torch.optim.Adam(
                 self.neural_aug.parameters()
             )
+            self.dummy_augs_funcs = dict()
+            self.dummy_augs_funcs['no_aug'] = aug_to_func['no_aug']
             print('Mix-up neural augmentation on!')
         elif neural_augs == '':
             self.neural_aug = None
@@ -492,7 +492,7 @@ class RadSacAgent(object):
             if self.neural_aug is None:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(self.augs_funcs)
             else:
-                obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(None)
+                obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(self.dummy_augs_funcs)
                 # TODO: Add softmax augmenter
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()

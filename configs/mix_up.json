@@ -13,7 +13,7 @@
     "critic_lr": 0.001,
     "critic_target_update_freq": 2,
     "critic_tau": 0.01,
-    "data_augs": "",
+    "data_augs": "no_aug",
     "detach_encoder": false,
     "discount": 0.99,
     "domain_name": "cartpole",
