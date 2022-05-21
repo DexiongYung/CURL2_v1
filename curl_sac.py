@@ -293,22 +293,18 @@ class RadSacAgent(object):
         augs_list = self.data_augs.split('-')
 
         if neural_augs == 'mix-up':
-            if 'crop' in augs_list or 'translate' in augs_list:
-                raise NotImplementedError('Crop or Translate not supported in neural augmenter yet')
+            if 'crop' in augs_list or 'translate' in augs_list or 'cutout' in augs_list:
+                raise NotImplementedError('Crop, Cut-out or Translate not supported in neural augmenter yet')
             self.neural_aug = torch.nn.Sequential(
                     torch.nn.Linear(1, len(augs_list)),
-                    torch.nn.Softmax()
+                    torch.nn.Softmax(dim=0)
                 ).to(device)
-            self.neural_aug_input = torch.ones(1).to(device)
             self.neural_aug_optimizer = torch.optim.Adam(
                 self.neural_aug.parameters()
             )
-            self.dummy_augs_funcs = dict()
-            self.dummy_augs_funcs['no_aug'] = aug_to_func['no_aug']
             print('Mix-up neural augmentation on!')
         elif neural_augs == '':
             self.neural_aug = None
-            self.neural_aug_input = None
             self.neural_aug_optimizer = None
             print('Neural augmentation off...')
         else:
@@ -485,25 +481,45 @@ class RadSacAgent(object):
         self.cpc_optimizer.step()
         if step % self.log_interval == 0:
             L.log('train/curl_loss', loss, step)
+    
+    def create_mix_up_obses_and_next_obses(self, obs, next_obs):
+        full_aug_obses = torch.zeros(obs.shape).repeat(len(self.augs_funcs), 1, 1, 1, 1)
+        full_aug_next_obses = torch.zeros(obs.shape).repeat(len(self.augs_funcs), 1, 1, 1, 1)
 
+        i = 0
+        for _, value in self.augs_funcs.items():
+            full_aug_obses[i] = value(obs)
+            full_aug_next_obses[i] = value(next_obs)
+            i += 1
+        
+        out = self.neural_aug(torch.ones(1).to(self.device)).view(len(self.augs_funcs), 1, 1, 1, 1)
+        full_aug_obses = full_aug_obses.to(self.device)
+        full_aug_next_obses = full_aug_next_obses.to(self.device)
+        return torch.sum(out * full_aug_obses, dim=0), torch.sum(out * full_aug_next_obses, dim=0)
 
     def update(self, replay_buffer, L, step):
         if self.encoder_type == 'pixel':
             if self.neural_aug is None:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(self.augs_funcs)
             else:
-                obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(self.dummy_augs_funcs)
-                # TODO: Add softmax augmenter
+                obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(None)
+                obs, next_obs = self.create_mix_up_obses_and_next_obses(obs=obs, next_obs=next_obs)
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
     
         if step % self.log_interval == 0:
             L.log('train/batch_reward', reward.mean(), step)
+        
+        if self.neural_aug_optimizer is not None:
+            self.neural_aug_optimizer.zero_grad()
 
         self.update_critic(obs, action, reward, next_obs, not_done, L, step)
 
         if step % self.actor_update_freq == 0:
             self.update_actor_and_alpha(obs, L, step)
+        
+        if self.neural_aug_optimizer is not None:
+            self.neural_aug_optimizer.step()
 
         if step % self.critic_target_update_freq == 0:
             utils.soft_update_params(

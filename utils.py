@@ -143,13 +143,10 @@ class ReplayBuffer(Dataset):
 
         return obses, actions, rewards, next_obses, not_dones, cpc_kwargs
 
-    def sample_rad(self,aug_funcs):
-        
+    def sample_rad(self, aug_funcs):
         # augs specified as flags
         # curl_sac organizes flags into aug funcs
         # passes aug funcs into sampler
-
-
         idxs = np.random.randint(
             0, self.capacity if self.full else self.idx, size=self.batch_size
         )
