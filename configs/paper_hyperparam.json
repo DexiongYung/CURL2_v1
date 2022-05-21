@@ -43,5 +43,5 @@
     "seed": 24,
     "task_name": "swingup",
     "work_dir": "./logs",
-    "neural_augs": ''
+    "neural_augs": ""
 }
