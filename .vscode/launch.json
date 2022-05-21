@@ -47,6 +47,15 @@
             "args": ["--config_file", "./configs/paper_hyperparam.json"]
         },
         {
+            "name": "Train mix-up w config",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/mix-up.json"]
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
