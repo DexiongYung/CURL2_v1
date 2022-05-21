@@ -40,7 +40,7 @@
     "save_model": true,
     "save_tb": true,
     "save_video": true,
-    "seed": 24,
+    "seed": 23,
     "task_name": "swingup",
     "work_dir": "./logs",
     "neural_augs": "mix-up"
