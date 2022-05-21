@@ -305,7 +305,7 @@ class RadSacAgent(object):
             self.neural_aug_optimizer = torch.optim.Adam(
                 self.neural_aug.parameters()
             )
-            print('Mix-up Neural augmentation on!')
+            print('Mix-up neural augmentation on!')
         elif neural_augs == '':
             self.neural_aug = None
             self.neural_aug_input = None
