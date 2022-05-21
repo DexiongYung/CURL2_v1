@@ -261,6 +261,7 @@ class RadSacAgent(object):
         detach_encoder=False,
         latent_dim=128,
         data_augs = '',
+        neural_augs = '',
     ):
         self.device = device
         self.discount = discount
@@ -290,8 +291,30 @@ class RadSacAgent(object):
                 'translate':rad.random_translate,
                 'no_aug':rad.no_aug,
             }
+        
+        augs_list = self.data_augs.split('-')
 
-        for aug_name in self.data_augs.split('-'):
+        if neural_augs == 'mix-up':
+            if 'crop' in augs_list or 'translate' in augs_list:
+                raise NotImplementedError('Crop or Translate not supported in neural augmenter yet')
+            self.neural_aug = torch.nn.Sequential(
+                    torch.nn.Linear(1, len(augs_list)),
+                    torch.nn.functional.softmax()
+                ).to(device)
+            self.neural_aug_input = torch.ones(1).to(device)
+            self.neural_aug_optimizer = torch.optim.Adam(
+                self.neural_aug.parameters()
+            )
+            print('Mix-up Neural augmentation on!')
+        elif neural_augs == '':
+            self.neural_aug = None
+            self.neural_aug_input = None
+            self.neural_aug_optimizer = None
+            print('Neural augmentation off...')
+        else:
+            raise NotImplementedError(f'"{neural_augs}" is not implemented')
+
+        for aug_name in augs_list:
             assert aug_name in aug_to_func, 'invalid data aug string'
             self.augs_funcs[aug_name] = aug_to_func[aug_name]
 
@@ -466,7 +489,11 @@ class RadSacAgent(object):
 
     def update(self, replay_buffer, L, step):
         if self.encoder_type == 'pixel':
-            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(self.augs_funcs)
+            if self.neural_aug is None:
+                obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(self.augs_funcs)
+            else:
+                obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(None)
+                # TODO: Add softmax augmenter
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
     
