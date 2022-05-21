@@ -53,7 +53,7 @@
             "program": "${workspaceFolder}/train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--config_file", "./configs/mix-up.json"]
+            "args": ["--config_file", "./configs/mix_up.json"]
         },
         {
             "name": "Python: Current File",
