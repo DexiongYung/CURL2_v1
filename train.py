@@ -64,10 +64,10 @@ def parse_args():
     parser.add_argument('--save_video', default=False, action='store_true')
     parser.add_argument('--save_model', default=False, action='store_true')
     parser.add_argument('--detach_encoder', default=False, action='store_true')
-    # data augs
-    parser.add_argument('--data_augs', default='crop', type=str)
     parser.add_argument('--log_interval', default=100, type=int)
     parser.add_argument('--config_file', default=None, type=str)
+    # data augs
+    parser.add_argument('--data_augs', default='crop', type=str)
     args = parser.parse_args()
     return args
 
@@ -165,7 +165,7 @@ def make_agent(obs_shape, action_shape, args, device):
             log_interval=args.log_interval,
             detach_encoder=args.detach_encoder,
             latent_dim=args.latent_dim,
-            data_augs=args.data_augs
+            data_augs=args.data_augs,
         )
     else:
         assert 'agent is not supported: %s' % args.agent
