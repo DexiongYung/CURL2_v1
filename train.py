@@ -214,6 +214,8 @@ def main():
     if args.save_model:
         checkpoint_dir = os.path.join('./checkpoints', exp_name)
         os.makedirs(checkpoint_dir, exist_ok=True)
+    else:
+        checkpoint_dir = None
 
     if args.save_video:
         video_dir = os.path.join('./videos', exp_name)
@@ -226,7 +228,9 @@ def main():
     video = VideoRecorder(video_dir if args.save_video else None)
 
     with open(os.path.join(work_dir, 'args.json'), 'w') as f:
-        json.dump(vars(args), f, sort_keys=True, indent=4)
+        args_dict = vars(args)
+        args_dict['checkpoint_dir'] = checkpoint_dir
+        json.dump(args_dict, f, sort_keys=True, indent=4)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
