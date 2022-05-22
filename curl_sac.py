@@ -249,6 +249,9 @@ class GumbleAugmenterNet(nn.Module):
             torch.nn.Linear(1, 1),
             torch.nn.ReLU()
         )
+
+        with torch.no_grad():
+            self.tau_net[0].weight.data.fill_(5.0)
     
     def forward(self, input):
         logits = self.gumble_linear.forward(input=input)
@@ -551,7 +554,7 @@ class RadSacAgent(object):
                     obs, next_obs = self.create_mix_up_obses_and_next_obses(obs=obs, next_obs=next_obs)
                 elif self.neural_aug_mode == 'gumble':
                     obs, next_obs = self.create_gumble_obses_and_next_obses(obs=obs, next_obs=next_obs)
-                    L.log('Gumble Tau', self.neural_aug.tau_net[0].weight.item(), step)
+                    L.log('Gumble Tau', torch.nn.functional.relu(self.neural_aug.tau_net[0].weight).item(), step)
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
     
