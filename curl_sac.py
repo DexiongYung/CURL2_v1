@@ -312,8 +312,8 @@ class RadSacAgent(object):
         augs_list = self.data_augs.split('-')
 
         if neural_augs != '':
-            if 'crop' in augs_list or 'translate' in augs_list or 'cutout' in augs_list:
-                    raise NotImplementedError('Crop, Cut-out or Translate not supported in neural augmenter yet')
+            if 'crop' in augs_list or 'translate' in augs_list or 'cutout' in augs_list or 'cutout_color' in augs_list:
+                    raise NotImplementedError('Crop, Cut-out Color, Cut-out or Translate not supported in neural augmenter yet')
 
             if 'mix-up' == neural_augs:
                 self.neural_aug = torch.nn.Sequential(
