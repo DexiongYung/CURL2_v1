@@ -86,7 +86,7 @@ dependencies:
     - dm-control==0.0.364896371
     - dm-env==1.5
     - dm-tree==0.1.7
-    - dmc2gym==1.0.0
+    - git+https://github.com/1nadequacy/dmc2gym.git
     - fasteners==0.17.3
     - future==0.18.2
     - glfw==2.5.3
