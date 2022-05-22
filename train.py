@@ -66,6 +66,7 @@ def parse_args():
     parser.add_argument('--detach_encoder', default=False, action='store_true')
     parser.add_argument('--log_interval', default=100, type=int)
     parser.add_argument('--config_file', default=None, type=str)
+    parser.add_argument('--device_id', default=1, type=int)
     # data augs
     parser.add_argument('--data_augs', default='crop', type=str)
     parser.add_argument('--neural_augs', default=False, action='store_true')
@@ -174,10 +175,13 @@ def make_agent(obs_shape, action_shape, args, device):
 
 def main():
     args = parse_args()
+    device = torch.device(f'cuda:{args.device_id}' if torch.cuda.is_available() else 'cpu')
 
     if args.config_file:
         config_dict = json.load(open(args.config_file))
-        args.__dict__ = config_dict
+        
+        for key, value in config_dict.items():
+            args.__dict__[key] = value
 
     if args.seed == -1: 
         args.__dict__["seed"] = np.random.randint(1,1000000)
@@ -198,6 +202,7 @@ def main():
     )
  
     env.seed(args.seed)
+    action_shape = env.action_space.shape
 
     # stack several consecutive frames together
     if args.encoder_type == 'pixel':
@@ -231,10 +236,6 @@ def main():
         args_dict = vars(args)
         args_dict['checkpoint_dir'] = checkpoint_dir
         json.dump(args_dict, f, sort_keys=True, indent=4)
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    action_shape = env.action_space.shape
 
     if args.encoder_type == 'pixel':
         obs_shape = (3*args.frame_stack, args.image_size, args.image_size)
