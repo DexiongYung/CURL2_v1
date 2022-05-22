@@ -24,7 +24,7 @@
     "eval_freq": 5000,
     "frame_stack": 3,
     "hidden_dim": 1024,
-    "id": "mix_up",
+    "id": "mix_up_uniform_init",
     "image_size": 108,
     "init_steps": 1000,
     "init_temperature": 0.1,
@@ -43,5 +43,6 @@
     "seed": 23,
     "task_name": "swingup",
     "work_dir": "./logs",
-    "neural_augs": "mix-up"
+    "neural_augs": "mix-up",
+    "device_id": 1
 }
