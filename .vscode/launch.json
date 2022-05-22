@@ -14,7 +14,7 @@
             "args": ["--config_file", "./configs/paper_hyperparam.json"]
         },
         {
-            "name": "Train mix-up w config",
+            "name": "Train mix-up",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/train.py",
@@ -23,13 +23,13 @@
             "args": ["--config_file", "./configs/mix_up.json"]
         },
         {
-            "name": "TEST mix-up v2",
+            "name": "TEST gumble",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--config_file", "./configs/mix_up_v2.json"]
+            "args": ["--config_file", "./configs/gumble.json"]
         },
         {
             "name": "Python: Current File",

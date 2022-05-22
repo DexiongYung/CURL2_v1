@@ -241,6 +241,21 @@ class CURL(nn.Module):
         logits = logits - torch.max(logits, 1)[0][:, None]
         return logits
 
+class GumbleAugmenterNet(nn.Module):
+    def __init__(self, augs_list: list):
+        super(GumbleAugmenterNet, self).__init__()
+        self.gumble_linear = torch.nn.Linear(1, len(augs_list))
+        self.tau_net = torch.nn.Sequential(
+            torch.nn.Linear(1, 1),
+            torch.nn.ReLU()
+        )
+    
+    def forward(self, input):
+        logits = self.gumble_linear.forward(input=input)
+        tau = self.tau_net.forward(input=input)
+
+        return torch.nn.functional.gumbel_softmax(logits=logits, tau=tau)
+
 class RadSacAgent(object):
     """RAD with SAC."""
     def __init__(
@@ -288,21 +303,29 @@ class RadSacAgent(object):
         self.detach_encoder = detach_encoder
         self.encoder_type = encoder_type
         self.data_augs = data_augs
+        self.neural_aug_mode = neural_augs
 
         self.augs_funcs = {}
         augs_list = self.data_augs.split('-')
 
-        if neural_augs == 'mix-up':
+        if neural_augs != '':
             if 'crop' in augs_list or 'translate' in augs_list or 'cutout' in augs_list:
-                raise NotImplementedError('Crop, Cut-out or Translate not supported in neural augmenter yet')
-            self.neural_aug = torch.nn.Sequential(
-                    torch.nn.Linear(1, len(augs_list)),
-                    torch.nn.Softmax(dim=0)
-                ).to(device)
+                    raise NotImplementedError('Crop, Cut-out or Translate not supported in neural augmenter yet')
+
+            if 'mix-up' == neural_augs:
+                self.neural_aug = torch.nn.Sequential(
+                        torch.nn.Linear(1, len(augs_list)),
+                        torch.nn.Softmax(dim=0)
+                    )
+                print('Mix-up neural augmentation on!')
+            elif neural_augs == 'gumble':
+                self.neural_aug = GumbleAugmenterNet(augs_list=augs_list)
+                print('Gumble neural augmentation on!')
+            
+            self.neural_aug = self.neural_aug.to(self.device)
             self.neural_aug_optimizer = torch.optim.Adam(
-                self.neural_aug.parameters()
-            )
-            print('Mix-up neural augmentation on!')
+                    self.neural_aug.parameters()
+                )
         elif neural_augs == '':
             self.neural_aug = None
             self.neural_aug_optimizer = None
@@ -417,7 +440,6 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log('train_critic/loss', critic_loss, step)
 
-
         # Optimize the critic
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
@@ -482,20 +504,41 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log('train/curl_loss', loss, step)
     
-    def create_mix_up_obses_and_next_obses(self, obs, next_obs):
-        full_aug_obses = torch.zeros(obs.shape).repeat(len(self.augs_funcs), 1, 1, 1, 1)
-        full_aug_next_obses = torch.zeros(obs.shape).repeat(len(self.augs_funcs), 1, 1, 1, 1)
+    def create_tiled_augs_obses(self, obs, next_obs):
+        tiled_obs = torch.zeros(obs.shape).repeat(len(self.augs_funcs), 1, 1, 1, 1)
+        tiled_next_obs = torch.zeros(obs.shape).repeat(len(self.augs_funcs), 1, 1, 1, 1)
 
         i = 0
         for _, value in self.augs_funcs.items():
-            full_aug_obses[i] = value(obs)
-            full_aug_next_obses[i] = value(next_obs)
+            tiled_obs[i] = value(obs)
+            tiled_next_obs[i] = value(next_obs)
             i += 1
         
+        return tiled_obs, tiled_next_obs
+
+    def create_mix_up_obses_and_next_obses(self, obs, next_obs):
+        tiled_obs, tiled_next_obs = self.create_tiled_augs_obses(obs=obs, next_obs=next_obs)
+        
         out = self.neural_aug(torch.ones(1).to(self.device)).view(len(self.augs_funcs), 1, 1, 1, 1)
-        full_aug_obses = full_aug_obses.to(self.device)
-        full_aug_next_obses = full_aug_next_obses.to(self.device)
-        return torch.sum(out * full_aug_obses, dim=0), torch.sum(out * full_aug_next_obses, dim=0)
+        tiled_obs = tiled_obs.to(self.device)
+        tiled_next_obs = tiled_next_obs.to(self.device)
+        return torch.sum(out * tiled_obs, dim=0), torch.sum(out * tiled_next_obs, dim=0)
+    
+    def create_gumble_obses_and_next_obses(self, obs, next_obs):
+        sample = self.neural_aug(torch.ones(1).to(self.device))
+        aug_idx = torch.argmax(sample).item()
+        tiled_sample = sample.view(len(self.augs_funcs), 1, 1, 1, 1)
+        
+        tiled_obs = torch.zeros(obs.shape).repeat(len(self.augs_funcs), 1, 1, 1, 1)
+        tiled_next_obs = torch.zeros(obs.shape).repeat(len(self.augs_funcs), 1, 1, 1, 1)
+
+        aug_func_key = list(self.augs_funcs.keys())[aug_idx]
+        tiled_obs[aug_idx] = self.augs_funcs[aug_func_key](obs)
+        tiled_next_obs[aug_idx] = self.augs_funcs[aug_func_key](next_obs)
+
+        tiled_obs = tiled_obs.to(self.device)
+        tiled_next_obs = tiled_next_obs.to(self.device)
+        return torch.sum(tiled_sample * tiled_obs, dim=0), torch.sum(tiled_sample * tiled_next_obs, dim=0)
 
     def update(self, replay_buffer, L, step):
         if self.encoder_type == 'pixel':
@@ -503,7 +546,12 @@ class RadSacAgent(object):
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(self.augs_funcs)
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(None)
-                obs, next_obs = self.create_mix_up_obses_and_next_obses(obs=obs, next_obs=next_obs)
+
+                if self.neural_aug_mode == 'mix-up':
+                    obs, next_obs = self.create_mix_up_obses_and_next_obses(obs=obs, next_obs=next_obs)
+                elif self.neural_aug_mode == 'gumble':
+                    obs, next_obs = self.create_gumble_obses_and_next_obses(obs=obs, next_obs=next_obs)
+                    L.log('Gumble Tau', self.neural_aug.gumble_linear.tau_net[0].weight.item(), step)
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
     
