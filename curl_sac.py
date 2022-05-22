@@ -320,6 +320,7 @@ class RadSacAgent(object):
                         torch.nn.Linear(1, len(augs_list)),
                         torch.nn.Softmax(dim=0)
                     )
+                self.neural_aug[0].weights.data.fill_(1/len(augs_list))
                 print('Mix-up neural augmentation on!')
             elif neural_augs == 'gumble':
                 self.neural_aug = GumbleAugmenterNet(augs_list=augs_list)
