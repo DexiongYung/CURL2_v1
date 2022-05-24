@@ -176,7 +176,8 @@ def main():
 
     if args.config_file:
         config_dict = json.load(open(args.config_file))
-        args.__dict__ = config_dict
+        for key, value in config_dict.items():
+            args.__dict__[key] = value
 
     if args.seed == -1: 
         args.__dict__["seed"] = np.random.randint(1,1000000)
