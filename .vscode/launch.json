@@ -5,46 +5,22 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "paper RAD",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/train.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args": [
-                "--id", "paper_hyperparam",
-                "--domain_name", "cartpole",
-                "--task_name", "swingup",
-                "--encoder_type", "pixel",
-                "--work_dir", "./tmp/cartpole",
-                "--action_repeat", "8", 
-                "--num_eval_episodes", "10",
-                "--pre_transform_image_size", "100", 
-                "--image_size", "84",
-                "--agent", "rad_sac",
-                "--frame_stack", "3", 
-                "--data_augs", "flip",
-                "--seed", "23",
-                "--critic_lr", "1e-3", 
-                "--actor_lr", "1e-3", 
-                "--eval_freq", "1000",
-                "--batch_size", "512", 
-                "--num_train_steps", "200000",
-                "--save_tb",
-                "--save_video",
-                "--save_model",
-                "--log_interval", "1",
-                "--config_file", "./configs/paper_hyperparam.json"
-            ]
-        },
-        {
-            "name": "Train w config",
+            "name": "Train Translate",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": ["--config_file", "./configs/paper_hyperparam.json"]
+        },
+        {
+            "name": "Train Vanilla",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/vanilla.json"]
         },
         {
             "name": "Python: Current File",
