@@ -40,6 +40,7 @@
     "save_model": true,
     "save_tb": true,
     "save_video": true,
+    "save_config": true,
     "seed": 24,
     "task_name": "swingup",
     "work_dir": "./logs",

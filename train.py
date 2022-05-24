@@ -59,10 +59,11 @@ def parse_args():
     # misc
     parser.add_argument('--seed', default=1, type=int)
     parser.add_argument('--work_dir', default='.', type=str)
-    parser.add_argument('--save_tb', default=False, action='store_true')
+    parser.add_argument('--save_tb', default=True, action='store_true')
     parser.add_argument('--save_buffer', default=False, action='store_true')
     parser.add_argument('--save_video', default=False, action='store_true')
-    parser.add_argument('--save_model', default=False, action='store_true')
+    parser.add_argument('--save_model', default=True, action='store_true')
+    parser.add_argument('--save_config', default=True, action='store_true')
     parser.add_argument('--detach_encoder', default=False, action='store_true')
     parser.add_argument('--config_file', default='./configs/vanilla.json', type=str)
     parser.add_argument('--device_id', default=0, type=int)
@@ -211,7 +212,6 @@ def main():
     env_name = args.domain_name + '_' + args.task_name
     exp_name = os.path.join(env_name, args.id, 'seed_' + str(args.seed), 'train_steps_' + str(args.num_train_steps), ts)
     work_dir = os.path.join(args.work_dir, exp_name)
-    os.makedirs(work_dir, exist_ok=True)
     
     if args.save_model:
         checkpoint_dir = os.path.join('./checkpoints', exp_name)
@@ -227,8 +227,10 @@ def main():
 
     video = VideoRecorder(video_dir if args.save_video else None)
 
-    with open(os.path.join(work_dir, 'args.json'), 'w') as f:
-        json.dump(vars(args), f, sort_keys=True, indent=4)
+    if args.save_config:
+        os.makedirs(work_dir, exist_ok=True)
+        with open(os.path.join(work_dir, 'args.json'), 'w') as f:
+            json.dump(vars(args), f, sort_keys=True, indent=4)
 
     action_shape = env.action_space.shape
 
