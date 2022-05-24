@@ -64,7 +64,7 @@ def parse_args():
     parser.add_argument('--save_video', default=False, action='store_true')
     parser.add_argument('--save_model', default=False, action='store_true')
     parser.add_argument('--detach_encoder', default=False, action='store_true')
-    parser.add_argument('--config_file', default=None, type=str)
+    parser.add_argument('--config_file', default='./configs/vanilla.json', type=str)
     parser.add_argument('--device_id', default=0, type=int)
     # data augs
     parser.add_argument('--data_augs', default='crop', type=str)
