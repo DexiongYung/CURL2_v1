@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision.models as models
 
 import utils
 from encoder import make_encoder
@@ -566,15 +567,16 @@ class LatentRadSacAgent(object):
 
         self.augs_funcs = dict(no_aug=rad.no_aug)
         self.latent_augs_funcs = dict()
-        
+        enc_out_sz = 1
+
         if 'translate' in self.latent_augs:
-            self.universal_encoder = nn.Conv2d(obs_shape[0], 1, 49).to(device)
+            self.universal_encoder = nn.Conv2d(obs_shape[0], enc_out_sz, 51).to(device)
         elif 'crop' in self.latent_augs:
-            self.universal_encoder = nn.Conv2d(obs_shape[0], 1, 41).to(device)
+            self.universal_encoder = nn.Conv2d(obs_shape[0], enc_out_sz, 39).to(device)
         else:
-            self.universal_encoder = nn.Conv2d(obs_shape[0], 1, 45).to(device)
+            self.universal_encoder = nn.Conv2d(obs_shape[0], enc_out_sz, 45).to(device)
         
-        obs_shape = torch.zeros(1, 64, 64).shape
+        obs_shape = torch.zeros(enc_out_sz, 64, 64).shape
         self.obs_shape = obs_shape
 
         split_latent_augs = latent_augs.split('-')
