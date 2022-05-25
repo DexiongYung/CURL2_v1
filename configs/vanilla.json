@@ -39,9 +39,9 @@
     "save_buffer": false,
     "save_model": true,
     "save_tb": true,
-    "save_video": true,
+    "save_video": false,
     "save_config": true,
-    "seed": 24,
+    "seed": 23,
     "task_name": "swingup",
     "work_dir": "./logs",
     "device_id": 0
