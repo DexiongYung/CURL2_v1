@@ -26,7 +26,7 @@ class PixelEncoder(nn.Module):
         self.convs = nn.ModuleList(
             [nn.Conv2d(obs_shape[0], num_filters, 3, stride=2)]
         )
-        for i in range(num_layers - 1):
+        for _ in range(num_layers - 1):
             self.convs.append(nn.Conv2d(num_filters, num_filters, 3, stride=1))
 
         if obs_shape[-1] == 108:

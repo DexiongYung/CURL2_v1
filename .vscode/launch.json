@@ -23,13 +23,13 @@
             "args": ["--config_file", "./configs/vanilla.json"]
         },
         {
-            "name": "Test",
+            "name": "Test Latent",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--config_file", "./configs/test.json"]
+            "args": ["--config_file", "./configs/test_latent.json"]
         },
         {
             "name": "Python: Current File",

@@ -8,7 +8,7 @@ import dmc2gym
 import utils
 from logger import Logger
 from video import VideoRecorder
-from curl_sac import RadSacAgent
+from curl_sac import RadSacAgent, LatentRadSacAgent
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -68,7 +68,8 @@ def parse_args():
     parser.add_argument('--config_file', default='./configs/vanilla.json', type=str)
     parser.add_argument('--device_id', default=0, type=int)
     # data augs
-    parser.add_argument('--data_augs', default='crop', type=str)
+    parser.add_argument('--data_augs', default='no_augs', type=str)
+    parser.add_argument('--latent_augs', default='no_augs', type=str)
     parser.add_argument('--log_interval', default=100, type=int)
     args = parser.parse_args()
     return args
@@ -168,6 +169,36 @@ def make_agent(obs_shape, action_shape, args, device):
             detach_encoder=args.detach_encoder,
             latent_dim=args.latent_dim,
             data_augs=args.data_augs
+        )
+    elif args.agent == 'latent_rad_sac':
+        return LatentRadSacAgent(
+            obs_shape=obs_shape,
+            action_shape=action_shape,
+            device=device,
+            hidden_dim=args.hidden_dim,
+            discount=args.discount,
+            init_temperature=args.init_temperature,
+            alpha_lr=args.alpha_lr,
+            alpha_beta=args.alpha_beta,
+            actor_lr=args.actor_lr,
+            actor_beta=args.actor_beta,
+            actor_log_std_min=args.actor_log_std_min,
+            actor_log_std_max=args.actor_log_std_max,
+            actor_update_freq=args.actor_update_freq,
+            critic_lr=args.critic_lr,
+            critic_beta=args.critic_beta,
+            critic_tau=args.critic_tau,
+            critic_target_update_freq=args.critic_target_update_freq,
+            encoder_type=args.encoder_type,
+            encoder_feature_dim=args.encoder_feature_dim,
+            encoder_lr=args.encoder_lr,
+            encoder_tau=args.encoder_tau,
+            num_layers=args.num_layers,
+            num_filters=args.num_filters,
+            log_interval=args.log_interval,
+            detach_encoder=args.detach_encoder,
+            latent_dim=args.latent_dim,
+            latent_augs=args.latent_augs
         )
     else:
         assert 'agent is not supported: %s' % args.agent
