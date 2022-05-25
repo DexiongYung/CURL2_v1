@@ -569,6 +569,8 @@ class LatentRadSacAgent(object):
         
         if 'translate' in self.latent_augs:
             self.universal_encoder = nn.Conv2d(obs_shape[0], 1, 49).to(device)
+        elif 'crop' in self.latent_augs:
+            self.universal_encoder = nn.Conv2d(obs_shape[0], 1, 41).to(device)
         else:
             self.universal_encoder = nn.Conv2d(obs_shape[0], 1, 45).to(device)
         
@@ -653,7 +655,9 @@ class LatentRadSacAgent(object):
     def _post_universal_encoder_processing(self, obs):
         if 'translate' in self.latent_augs:
             pad = (self.obs_shape[-1] - obs.shape[-1]) //2
-            obs = torch.nn.functional.pad(obs, (pad, pad, pad ,pad)).to(self.device)
+            return torch.nn.functional.pad(obs, (pad, pad, pad ,pad)).to(self.device)
+        elif 'crop' in self.latent_augs:
+            return utils.center_crop_images(image=obs, output_size=64).to(self.device)
         else:
             return obs
 
@@ -746,16 +750,19 @@ class LatentRadSacAgent(object):
         
         obs = self.universal_encoder(obs)
         next_obs = self.universal_encoder(next_obs)
+        obs = obs.to(self.device)
+        next_obs = next_obs.to(self.device)
 
         for key, aug_func in self.latent_augs_funcs.items():
             if key == 'translate':
                 obs, rdm_idxes = aug_func(obs, return_random_idxs=True)
-                next_obs = aug_func(next_obs, **rdm_idxes).to(self.device)
-                obs = obs.to(self.device)
-                next_obs = next_obs.to(self.device)
+                next_obs = aug_func(next_obs, **rdm_idxes)
             else:
                 obs = aug_func(obs)
                 next_obs = aug_func(next_obs)
+        
+        obs = obs.to(self.device)
+        next_obs = next_obs.to(self.device)
 
         self.universal_encoder_optimizer.zero_grad()
 

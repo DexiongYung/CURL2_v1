@@ -14,7 +14,6 @@ def random_cutout(latents, min_cut=5, max_cut=15):
         min / max cut: int, min / max size of cutout 
         returns np.array
     """
-    device = latents.get_device()
     n, c, h, w = latents.shape
     w1 = np.random.randint(min_cut, max_cut, n)
     h1 = np.random.randint(min_cut, max_cut, n)
@@ -24,7 +23,7 @@ def random_cutout(latents, min_cut=5, max_cut=15):
         cut_img = torch.clone(latent)
         cut_img[:, h11:h11 + h11, w11:w11 + w11] = 0
         cutouts[i] = cut_img
-    return cutouts.to(device=device)
+    return cutouts
 
 
 def center_translate_images(image, size):
