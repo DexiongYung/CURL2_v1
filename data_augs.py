@@ -3,6 +3,21 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from TransformLayer import ColorJitterLayer
+from utils import center_translate_images
+
+
+def center_random_crop(imgs, crop_sz:int=100):
+    _, _, _, img_sz = imgs.shape
+
+    if isinstance(imgs, np.ndarray):
+        imgs_cropped = random_crop(imgs=imgs, out=crop_sz)
+        return center_translate_images(image=imgs_cropped, size=img_sz)
+    elif torch.is_tensor(imgs):
+        device = imgs.get_device()
+        imgs_cropped = random_crop(imgs=imgs.cpu().numpy(), out=crop_sz)
+        return torch.from_numpy(center_translate_images(image=imgs_cropped, size=img_sz)).to(device)
+    else:
+        raise ValueError('"imgs" is not a numpy array or tensor')
 
 
 def random_crop(imgs, out=84):
