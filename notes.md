@@ -25,10 +25,9 @@ sudo apt-get install libglew-dev
 pip install patchelf
 
 
-##Problem 1
+## Problem 1
 Get the following error when running train.py
 _glfwPlatformGetTls: Assertion `tls->posix.allocated == 1' failed.
-
 
 Solution:
 xvfb-run -a -s "-screen 0 1400x900x24" bash

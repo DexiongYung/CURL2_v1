@@ -133,7 +133,8 @@ def evaluate(env, agent, video, num_episodes, L, step, args, work_dir):
         log_data[key][step]['std_ep_reward'] = std_ep_reward 
         log_data[key][step]['env_step'] = step * args.action_repeat
 
-        np.save(filename, log_data)
+        if args.save_config:
+            np.save(filename, log_data)
 
     run_eval_loop(sample_stochastically=False)
     L.dump(step)

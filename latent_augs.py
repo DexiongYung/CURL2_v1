@@ -61,9 +61,14 @@ def center_random_crop(latents, out:int=60):
     cropped_out = random_crop(imgs=latents, out=out)
     return torch.nn.functional.pad(cropped_out, (pad, pad, pad ,pad)).to(device)
 
+
+def gaussian(latents, std:float=0.1):
+    return latents + torch.normal(mean=0, std=std, size=latents.shape)
+
  
 latent_aug_to_func = {
     'center_crop': center_random_crop,
     'cutout' : random_cutout,
+    'gaussian' : gaussian,
     'no_augs' : identity
 }
