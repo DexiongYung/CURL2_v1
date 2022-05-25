@@ -63,7 +63,7 @@ def center_random_crop(latents, out:int=60):
 
 
 def gaussian(latents, std:float=0.1):
-    return latents + torch.normal(mean=0, std=std, size=latents.shape)
+    return (latents + torch.normal(mean=0, std=std, size=latents.shape)).to(latents.get_device())
 
  
 latent_aug_to_func = {
