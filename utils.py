@@ -297,3 +297,13 @@ def center_translate(image, size):
     w1 = (size - w) // 2
     outs[:, h1:h1 + h, w1:w1 + w] = image
     return outs
+
+
+def center_translate_images(image, size):
+    b, c, h, w = image.shape
+    assert size >= h and size >= w
+    outs = np.zeros((b, c, size, size), dtype=image.dtype)
+    h1 = (size - h) // 2
+    w1 = (size - w) // 2
+    outs[:, :, h1:h1 + h, w1:w1 + w] = image
+    return outs
