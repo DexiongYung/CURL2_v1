@@ -37,7 +37,7 @@ def center_translate_images(image, size):
     return outs
 
 
-def random_crop(imgs, out=40):
+def random_crop(imgs, out=64):
     """
         args:
         imgs: np.array shape (B,C,H,W)
@@ -84,5 +84,6 @@ latent_aug_to_func = {
     'cutout' : random_cutout,
     'gaussian' : gaussian,
     'translate' : random_translate,
+    'crop': random_crop,
     'no_augs' : identity
 }
