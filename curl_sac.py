@@ -649,16 +649,20 @@ class LatentRadSacAgent(object):
     @property
     def alpha(self):
         return self.log_alpha.exp()
+    
+    def _post_universal_encoder_processing(self, obs):
+        if 'translate' in self.latent_augs:
+            pad = (self.obs_shape[-1] - obs.shape[-1]) //2
+            obs = torch.nn.functional.pad(obs, (pad, pad, pad ,pad)).to(self.device)
+        else:
+            return obs
 
     def select_action(self, obs):
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
             obs = self.universal_encoder(obs)
-
-            if 'translate' in self.latent_augs:
-                pad = (self.obs_shape[-1] - obs.shape[-1]) //2
-                obs = torch.nn.functional.pad(obs, (pad, pad, pad ,pad)).to(self.device)
+            obs = self._post_universal_encoder_processing(obs=obs)
    
             mu, _, _, _ = self.actor(
                 obs, compute_pi=False, compute_log_pi=False
@@ -666,16 +670,11 @@ class LatentRadSacAgent(object):
             return mu.cpu().data.numpy().flatten()
 
     def sample_action(self, obs):
-        if obs.shape[-1] != self.image_size:
-            obs = utils.center_crop_image(obs, self.image_size)
- 
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
             obs = self.universal_encoder(obs)
-            if 'translate' in self.latent_augs:
-                pad = (self.obs_shape[-1] - obs.shape[-1]) // 2
-                obs = torch.nn.functional.pad(obs, (pad, pad, pad ,pad)).to(self.device)
+            obs = self._post_universal_encoder_processing(obs=obs)
             _, pi, _, _ = self.actor(obs, compute_log_pi=False)
             return pi.cpu().data.numpy().flatten()
 
@@ -748,9 +747,15 @@ class LatentRadSacAgent(object):
         obs = self.universal_encoder(obs)
         next_obs = self.universal_encoder(next_obs)
 
-        for _, aug_func in self.latent_augs_funcs.items():
-            obs = aug_func(obs)
-            next_obs = aug_func(next_obs)
+        for key, aug_func in self.latent_augs_funcs.items():
+            if key == 'translate':
+                obs, rdm_idxes = aug_func(obs, return_random_idxs=True)
+                next_obs = aug_func(next_obs, **rdm_idxes).to(self.device)
+                obs = obs.to(self.device)
+                next_obs = next_obs.to(self.device)
+            else:
+                obs = aug_func(obs)
+                next_obs = aug_func(next_obs)
 
         self.universal_encoder_optimizer.zero_grad()
 
