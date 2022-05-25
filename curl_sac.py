@@ -566,8 +566,14 @@ class LatentRadSacAgent(object):
 
         self.augs_funcs = dict(no_aug=rad.no_aug)
         self.latent_augs_funcs = dict()
-        self.universal_encoder = nn.Conv2d(obs_shape[0], 1, 45).to(device)
+        
+        if 'translate' in self.latent_augs:
+            self.universal_encoder = nn.Conv2d(obs_shape[0], 1, 49).to(device)
+        else:
+            self.universal_encoder = nn.Conv2d(obs_shape[0], 1, 45).to(device)
+        
         obs_shape = torch.zeros(1, 64, 64).shape
+        self.obs_shape = obs_shape
 
         split_latent_augs = latent_augs.split('-')
         for aug_str in split_latent_augs:
@@ -649,6 +655,11 @@ class LatentRadSacAgent(object):
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
             obs = self.universal_encoder(obs)
+
+            if 'translate' in self.latent_augs:
+                pad = (self.obs_shape[-1] - obs.shape[-1]) //2
+                obs = torch.nn.functional.pad(obs, (pad, pad, pad ,pad)).to(self.device)
+   
             mu, _, _, _ = self.actor(
                 obs, compute_pi=False, compute_log_pi=False
             )
@@ -662,6 +673,9 @@ class LatentRadSacAgent(object):
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
             obs = self.universal_encoder(obs)
+            if 'translate' in self.latent_augs:
+                pad = (self.obs_shape[-1] - obs.shape[-1]) // 2
+                obs = torch.nn.functional.pad(obs, (pad, pad, pad ,pad)).to(self.device)
             _, pi, _, _ = self.actor(obs, compute_log_pi=False)
             return pi.cpu().data.numpy().flatten()
 
