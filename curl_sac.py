@@ -331,10 +331,12 @@ class RadSacAgent(object):
             self.augs_funcs[aug_name] = aug_to_func[aug_name]
         
         if self.pba_mode:
+            print('Not PBA mode on!')
             self.aug_score_dict = dict()
             for key, _ in self.augs_funcs:
                 self.aug_score_dict[key] = 0
         else:
+            print('Not PBA off...')
             self.aug_score_dict = None
 
         self.last_step_best_aug_idx = None
