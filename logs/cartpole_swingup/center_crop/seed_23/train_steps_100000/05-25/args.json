@@ -30,7 +30,6 @@
     "image_size": 108,
     "init_steps": 1000,
     "init_temperature": 0.1,
-    "latent_augs": "no_augs",
     "latent_dim": 128,
     "log_interval": 1,
     "num_eval_episodes": 10,
