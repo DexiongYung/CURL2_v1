@@ -336,6 +336,7 @@ class RadSacAgent(object):
                 print(f'Prune PBA mode on! With prune step: {prune_interval}')
                 self.prune_interval = prune_interval
             else:
+                self.prune_interval = None
                 print('Not PBA mode on!')
             self.aug_score_dict = dict()
             for key, _ in self.augs_funcs.items():
