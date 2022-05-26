@@ -63,7 +63,6 @@ def parse_args():
     parser.add_argument('--save_buffer', default=False, action='store_true')
     parser.add_argument('--save_video', default=False, action='store_true')
     parser.add_argument('--save_model', default=True, action='store_true')
-    parser.add_argument('--save_config', default=True, action='store_true')
     parser.add_argument('--detach_encoder', default=False, action='store_true')
     parser.add_argument('--config_file', default='./configs/vanilla.json', type=str)
     parser.add_argument('--device_id', default=0, type=int)
@@ -132,7 +131,7 @@ def evaluate(env, agent, video, num_episodes, L, step, args, work_dir):
         log_data[key][step]['max_ep_reward'] = best_ep_reward 
         log_data[key][step]['std_ep_reward'] = std_ep_reward 
         log_data[key][step]['env_step'] = step * args.action_repeat
-
+        
         np.save(filename, log_data)
 
     run_eval_loop(sample_stochastically=False)
@@ -258,10 +257,9 @@ def main():
 
     video = VideoRecorder(video_dir if args.save_video else None)
 
-    if args.save_config:
-        os.makedirs(work_dir, exist_ok=True)
-        with open(os.path.join(work_dir, 'args.json'), 'w') as f:
-            json.dump(vars(args), f, sort_keys=True, indent=4)
+    os.makedirs(work_dir, exist_ok=True)
+    with open(os.path.join(work_dir, 'args.json'), 'w') as f:
+        json.dump(vars(args), f, sort_keys=True, indent=4)
 
     action_shape = env.action_space.shape
 

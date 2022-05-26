@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision.models as models
 
 import utils
 from encoder import make_encoder
@@ -566,8 +567,17 @@ class LatentRadSacAgent(object):
 
         self.augs_funcs = dict(no_aug=rad.no_aug)
         self.latent_augs_funcs = dict()
-        self.universal_encoder = nn.Conv2d(obs_shape[0], 1, 45).to(device)
-        obs_shape = torch.zeros(1, 64, 64).shape
+        enc_out_sz = 1
+
+        if 'translate' in self.latent_augs:
+            self.universal_encoder = nn.Conv2d(obs_shape[0], enc_out_sz, 51).to(device)
+        elif 'crop' in self.latent_augs:
+            self.universal_encoder = nn.Conv2d(obs_shape[0], enc_out_sz, 39).to(device)
+        else:
+            self.universal_encoder = nn.Conv2d(obs_shape[0], enc_out_sz, 45).to(device)
+        
+        obs_shape = torch.zeros(enc_out_sz, 64, 64).shape
+        self.obs_shape = obs_shape
 
         split_latent_augs = latent_augs.split('-')
         for aug_str in split_latent_augs:
@@ -643,25 +653,34 @@ class LatentRadSacAgent(object):
     @property
     def alpha(self):
         return self.log_alpha.exp()
+    
+    def _post_universal_encoder_processing(self, obs):
+        if 'translate' in self.latent_augs:
+            pad = (self.obs_shape[-1] - obs.shape[-1]) //2
+            return torch.nn.functional.pad(obs, (pad, pad, pad ,pad)).to(self.device)
+        elif 'crop' in self.latent_augs:
+            return utils.center_crop_images(image=obs, output_size=64).to(self.device)
+        else:
+            return obs
 
     def select_action(self, obs):
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
             obs = self.universal_encoder(obs)
+            obs = self._post_universal_encoder_processing(obs=obs)
+   
             mu, _, _, _ = self.actor(
                 obs, compute_pi=False, compute_log_pi=False
             )
             return mu.cpu().data.numpy().flatten()
 
     def sample_action(self, obs):
-        if obs.shape[-1] != self.image_size:
-            obs = utils.center_crop_image(obs, self.image_size)
- 
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
             obs = self.universal_encoder(obs)
+            obs = self._post_universal_encoder_processing(obs=obs)
             _, pi, _, _ = self.actor(obs, compute_log_pi=False)
             return pi.cpu().data.numpy().flatten()
 
@@ -733,10 +752,19 @@ class LatentRadSacAgent(object):
         
         obs = self.universal_encoder(obs)
         next_obs = self.universal_encoder(next_obs)
+        obs = obs.to(self.device)
+        next_obs = next_obs.to(self.device)
 
-        for _, aug_func in self.latent_augs_funcs.items():
-            obs = aug_func(obs)
-            next_obs = aug_func(next_obs)
+        for key, aug_func in self.latent_augs_funcs.items():
+            if key == 'translate':
+                obs, rdm_idxes = aug_func(obs, return_random_idxs=True)
+                next_obs = aug_func(next_obs, **rdm_idxes)
+            else:
+                obs = aug_func(obs)
+                next_obs = aug_func(next_obs)
+        
+        obs = obs.to(self.device)
+        next_obs = next_obs.to(self.device)
 
         self.universal_encoder_optimizer.zero_grad()
 
