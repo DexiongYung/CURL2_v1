@@ -327,6 +327,8 @@ class RadSacAgent(object):
         for aug_name in self.data_augs.split("-"):
             assert aug_name in aug_to_func, "invalid data aug string"
             self.augs_funcs[aug_name] = aug_to_func[aug_name]
+        
+        print(f'Aug set: {self.aug_funcs}')
 
         self.actor = Actor(
             obs_shape,
