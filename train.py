@@ -316,6 +316,10 @@ def main():
             if step % args.log_interval == 0:
                 L.log("train/episode", episode, step)
 
+                if args.pba_mode:
+                    L.log("train/Last aug idx", agent.last_step_best_aug_idx, step)
+                    print('Aug score dict', agent.aug_score_dict)
+
         # sample action for data collection
         if step < args.init_steps:
             action = env.action_space.sample()

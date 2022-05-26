@@ -333,13 +333,13 @@ class RadSacAgent(object):
         if self.pba_mode:
             print('Not PBA mode on!')
             self.aug_score_dict = dict()
-            for key, _ in self.augs_funcs:
+            for key, _ in self.augs_funcs.items():
                 self.aug_score_dict[key] = 0
         else:
-            print('Not PBA off...')
+            print('Not PBA mode off...')
             self.aug_score_dict = None
 
-        self.last_step_best_aug_idx = None
+        self.last_step_best_aug_idx = -1
 
         self.actor = Actor(
             obs_shape,
@@ -465,8 +465,8 @@ class RadSacAgent(object):
         L.log("train/Q1 loss", Q1_loss, step)
         L.log("train/Q2 loss", Q2_loss, step)
         L.log("train/Mean Target Q", torch.mean(target_Q), step)
-        L.log("train/Mean Q1", torch.mean(current_Q1))
-        L.log('train/Mean Q2', torch.mean(current_Q2))
+        L.log("train/Mean Q1", torch.mean(current_Q1), step)
+        L.log('train/Mean Q2', torch.mean(current_Q2), step)
 
         return Q1_loss + Q2_loss
 
@@ -544,29 +544,41 @@ class RadSacAgent(object):
         self.cpc_optimizer.step()
         if step % self.log_interval == 0:
             L.log("train/curl_loss", loss, step)
+    
+
+    def run_not_PBA(self, replay_buffer, L, step):
+        is_first = True
+        idxs = None
+        best_score = float('-inf')
+        best_func_key = None
+        best_obs = None
+        best_next_obs = None
+        for key, func in self.augs_funcs.items():
+            func_dict = {key: func}
+            if is_first:
+                obs, action, reward, next_obs, not_done, idxs = replay_buffer.sample_rad(func_dict, return_idxes=True)
+                is_first = False
+            else:
+                obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(func_dict, idxs=idxs)
+                
+            score = self.calculate_critic_loss(obs=obs, action=action, reward=reward, next_obs=next_obs, not_done=not_done, L=L, step=step)
+                
+            if score > best_score:
+                best_score = score
+                best_func_key = key
+                best_obs = obs
+                best_next_obs = next_obs
+
+        self.optimize_critic(loss=best_score, L=L, step=step)
+        self.aug_score_dict[best_func_key] += 1
+        self.last_step_best_aug_idx = list(self.augs_funcs.keys()).index(best_func_key)
+
+        return best_obs, action, reward, best_next_obs, not_done
+
 
     def update(self, replay_buffer, L, step):
         if self.pba_mode:
-            is_first = True
-            idxs = None
-            best_score = float('-inf')
-            best_func_key = None
-            for key, func in self.augs_funcs.items():
-                func_dict = {key: func}
-                if is_first:
-                    obs, action, reward, next_obs, not_done, idxs = replay_buffer.sample_rad(func_dict, return_idxes=True)
-                    is_first = False
-                else:
-                    obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(func_dict, idxs=idxs)
-                
-                score = self.calculate_critic_loss(obs=obs, action=action, reward=reward, next_obs=next_obs, not_done=not_done, L=L, step=step)
-                
-                if score > best_score:
-                    best_score = score
-                    best_func_key = key
-
-            self.optimize_critic(loss=best_score, L=L, step=step)
-            self.aug_score_dict[best_func_key] += 1
+            obs, action, reward, next_obs, not_done = self.run_not_PBA(replay_buffer=replay_buffer, L=L, step=step)
         else:
             if self.encoder_type == "pixel":
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
