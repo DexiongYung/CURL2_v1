@@ -11,6 +11,7 @@ LOG_FREQ = 10000
 
 aug_to_func = {
     'crop':rad.random_crop,
+    'center_crop': rad.center_random_crop,
     'grayscale':rad.random_grayscale,
     'cutout':rad.random_cutout,
     'cutout_color':rad.random_cutout_color,
@@ -252,12 +253,31 @@ class GumbleAugmenterNet(nn.Module):
 
         with torch.no_grad():
             self.tau_net[0].weight.data.fill_(5.0)
+            self.gumble_linear.weight.data.fill_(1/len(augs_list))
     
     def forward(self, input):
         logits = self.gumble_linear.forward(input=input)
         tau = self.tau_net.forward(input=input)
 
         return torch.nn.functional.gumbel_softmax(logits=logits, tau=tau, hard=True)
+
+class AnnealGumbleAugmenterNet(nn.Module):
+    def __init__(self, augs_list: list):
+        super(AnnealGumbleAugmenterNet, self).__init__()
+        self.gumble_linear = torch.nn.Linear(1, len(augs_list))
+        self.tau = 10
+
+        with torch.no_grad():
+            self.gumble_linear.weight.data.fill_(1/len(augs_list))
+    
+    def forward(self, input):
+        logits = self.gumble_linear.forward(input=input)
+
+        return torch.nn.functional.gumbel_softmax(logits=logits, tau=self.tau, hard=True)
+    
+    def update_tau(self, decay: float=0.99):
+        if self.tau > 0.1:
+            self.tau = self.tau * decay
 
 class RadSacAgent(object):
     """RAD with SAC."""
@@ -325,6 +345,9 @@ class RadSacAgent(object):
             elif neural_augs == 'gumble':
                 self.neural_aug = GumbleAugmenterNet(augs_list=augs_list)
                 print('Gumble neural augmentation on!')
+            elif neural_augs == 'gumble_anneal':
+                self.neural_aug = AnnealGumbleAugmenterNet(augs_list=augs_list)
+                print('Anneal Gumble neural augmentation on!')
             
             self.neural_aug = self.neural_aug.to(self.device)
             self.neural_aug_optimizer = torch.optim.Adam(
@@ -528,35 +551,39 @@ class RadSacAgent(object):
         tiled_next_obs = tiled_next_obs.to(self.device)
         return torch.sum(out * tiled_obs, dim=0), torch.sum(out * tiled_next_obs, dim=0)
     
-    def create_gumble_obses_and_next_obses(self, obs, next_obs):
+    def create_gumble_obses_and_next_obses(self, replay_buffer):
         sample = self.neural_aug(torch.ones(1).to(self.device))
         aug_idx = torch.argmax(sample).item()
         tiled_sample = sample.view(len(self.augs_funcs), 1, 1, 1, 1)
         
+        aug_func_key = list(self.augs_funcs.keys())[aug_idx]
+        aug_dict_rad = {aug_func_key:self.augs_funcs[aug_func_key]}
+        obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(aug_dict_rad)
         tiled_obs = torch.zeros(obs.shape).repeat(len(self.augs_funcs), 1, 1, 1, 1)
         tiled_next_obs = torch.zeros(obs.shape).repeat(len(self.augs_funcs), 1, 1, 1, 1)
-
-        aug_func_key = list(self.augs_funcs.keys())[aug_idx]
-        tiled_obs[aug_idx] = self.augs_funcs[aug_func_key](obs)
-        tiled_next_obs[aug_idx] = self.augs_funcs[aug_func_key](next_obs)
+        tiled_obs[aug_idx] = obs
+        tiled_next_obs[aug_idx] = next_obs
 
         tiled_obs = tiled_obs.to(self.device)
         tiled_next_obs = tiled_next_obs.to(self.device)
-        return torch.sum(tiled_sample * tiled_obs, dim=0), torch.sum(tiled_sample * tiled_next_obs, dim=0)
+        return torch.sum(tiled_sample * tiled_obs, dim=0), action, reward, torch.sum(tiled_sample * tiled_next_obs, dim=0), not_done
 
     def update(self, replay_buffer, L, step):
         if self.encoder_type == 'pixel':
             if self.neural_aug is None:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(self.augs_funcs)
             else:
-                obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(None)
-
                 if self.neural_aug_mode == 'mix-up':
+                    obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(None)
                     obs, next_obs = self.create_mix_up_obses_and_next_obses(obs=obs, next_obs=next_obs)
-                elif self.neural_aug_mode == 'gumble':
-                    obs, next_obs = self.create_gumble_obses_and_next_obses(obs=obs, next_obs=next_obs)
-                    with torch.no_grad():
-                        L.log('train/Gumble Tau', torch.nn.functional.relu(self.neural_aug.tau_net[0].weight).item(), step)
+                elif 'gumble' in self.neural_aug_mode:
+                    obs, action, reward, next_obs, not_done = self.create_gumble_obses_and_next_obses(replay_buffer=replay_buffer)
+
+                    if 'anneal' in self.neural_aug_mode:
+                        L.log('train/Non-trainable Gumble Tau', self.neural_aug.tau, step)
+                    else:
+                        with torch.no_grad():
+                            L.log('train/Gumble Tau', torch.nn.functional.relu(self.neural_aug.tau_net[0].weight).item(), step)
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
     

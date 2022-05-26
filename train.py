@@ -284,6 +284,9 @@ def main():
                 start_time = time.time()
             if step % args.log_interval == 0 or step == args.num_train_steps - 1:
                 L.log('train/episode_reward', episode_reward, step)
+                
+                if args.neural_augs:
+                    L.log('train/highest weighted aug idx', agent.neural_aug.forward(torch.ones(1).to(device)).argmax(), step)
 
             obs = env.reset()
             done = False

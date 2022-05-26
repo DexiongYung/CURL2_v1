@@ -156,7 +156,7 @@ class ReplayBuffer(Dataset):
         if aug_funcs:
             for aug,func in aug_funcs.items():
                 # apply crop and cutout first
-                if 'crop' in aug or 'cutout' in aug:
+                if 'crop' in aug or 'cutout' in aug or 'center_crop' in aug:
                     obses = func(obses)
                     next_obses = func(next_obses)
                 elif 'translate' in aug: 
@@ -293,4 +293,13 @@ def center_translate(image, size):
     h1 = (size - h) // 2
     w1 = (size - w) // 2
     outs[:, h1:h1 + h, w1:w1 + w] = image
+    return outs
+
+def center_translates(image, size):
+    b,c, h, w = image.shape
+    assert size >= h and size >= w
+    outs = np.zeros((b, c, size, size), dtype=image.dtype)
+    h1 = (size - h) // 2
+    w1 = (size - w) // 2
+    outs[:, :, h1:h1 + h, w1:w1 + w] = image
     return outs
