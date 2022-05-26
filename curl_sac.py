@@ -294,6 +294,7 @@ class RadSacAgent(object):
         latent_dim=128,
         data_augs="",
         pba_mode=None,
+        prune_interval=None
     ):
         self.device = device
         self.discount = discount
@@ -331,15 +332,18 @@ class RadSacAgent(object):
             self.augs_funcs[aug_name] = aug_to_func[aug_name]
         
         if self.pba_mode:
-            print('Not PBA mode on!')
+            if self.pba_mode == 'prune':
+                print(f'Prune PBA mode on! With prune step: {prune_interval}')
+                self.prune_interval = prune_interval
+            else:
+                print('Not PBA mode on!')
             self.aug_score_dict = dict()
             for key, _ in self.augs_funcs.items():
                 self.aug_score_dict[key] = 0
+            self.last_step_best_aug_idx = -1
         else:
             print('Not PBA mode off...')
             self.aug_score_dict = None
-
-        self.last_step_best_aug_idx = -1
 
         self.actor = Actor(
             obs_shape,
@@ -547,6 +551,18 @@ class RadSacAgent(object):
     
 
     def run_not_PBA(self, replay_buffer, L, step):
+        if self.prune_interval is not None and step > 1000 and step % self.prune_interval == 0 and len(self.augs_funcs) > 1:
+            lowest_score = float('inf')
+            lowest_key = None
+            for key, score in self.aug_score_dict.items():
+                if score < lowest_score:
+                    lowest_score = score
+                    lowest_key = key
+            
+            del self.aug_score_dict[lowest_key]
+            del self.augs_funcs[lowest_key]
+            
+
         is_first = True
         idxs = None
         best_score = float('-inf')

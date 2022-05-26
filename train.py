@@ -72,6 +72,7 @@ def parse_args():
     # data augs
     parser.add_argument("--data_augs", default="crop", type=str)
     parser.add_argument("--pba_mode", default=None, type=str)
+    parser.add_argument("--prune_interval", default=None, type=int)
     parser.add_argument("--log_interval", default=100, type=int)
     args = parser.parse_args()
     return args
@@ -171,7 +172,8 @@ def make_agent(obs_shape, action_shape, args, device):
             detach_encoder=args.detach_encoder,
             latent_dim=args.latent_dim,
             data_augs=args.data_augs,
-            pba_mode=args.pba_mode
+            pba_mode=args.pba_mode,
+            prune_interval=args.prune_interval
         )
     else:
         assert "agent is not supported: %s" % args.agent

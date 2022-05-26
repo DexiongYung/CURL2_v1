@@ -38,7 +38,7 @@
             "program": "${workspaceFolder}/train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--config_file", "./configs/not_pba.json"]
+            "args": ["--config_file", "./configs/not_PBA_prune.json"]
         },
         {
             "name": "Python: Current File",
