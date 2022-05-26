@@ -601,6 +601,9 @@ class RadSacAgent(object):
         if self.neural_aug_optimizer is not None:
             self.neural_aug_optimizer.step()
 
+            if 'anneal' in self.neural_aug_mode:
+                self.neural_aug.update_tau()
+
         if step % self.critic_target_update_freq == 0:
             utils.soft_update_params(
                 self.critic.Q1, self.critic_target.Q1, self.critic_tau
