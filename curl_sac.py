@@ -252,7 +252,7 @@ class GumbleAugmenterNet(nn.Module):
         )
 
         with torch.no_grad():
-            self.tau_net[0].weight.data.fill_(5.0)
+            self.tau_net[0].weight.data.fill_(10.0)
             self.gumble_linear.weight.data.fill_(1/len(augs_list))
     
     def forward(self, input):
@@ -265,7 +265,7 @@ class AnnealGumbleAugmenterNet(nn.Module):
     def __init__(self, augs_list: list):
         super(AnnealGumbleAugmenterNet, self).__init__()
         self.gumble_linear = torch.nn.Linear(1, len(augs_list))
-        self.tau = 10
+        self.tau = 20
 
         with torch.no_grad():
             self.gumble_linear.weight.data.fill_(1/len(augs_list))
@@ -275,7 +275,7 @@ class AnnealGumbleAugmenterNet(nn.Module):
 
         return torch.nn.functional.gumbel_softmax(logits=logits, tau=self.tau, hard=True)
     
-    def update_tau(self, decay: float=0.99):
+    def update_tau(self, decay: float=0.999):
         if self.tau > 0.1:
             self.tau = self.tau * decay
 

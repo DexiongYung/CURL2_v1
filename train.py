@@ -9,6 +9,7 @@ import utils
 from logger import Logger
 from video import VideoRecorder
 from curl_sac import RadSacAgent
+from scipy.stats import entropy
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -285,8 +286,12 @@ def main():
             if step % args.log_interval == 0 or step == args.num_train_steps - 1:
                 L.log('train/episode_reward', episode_reward, step)
                 
-                if args.neural_augs:
-                    L.log('train/Sampled aug idx', agent.neural_aug.forward(torch.ones(1).to(device)).argmax(), step)
+                if 'gumble' in args.neural_augs:
+                    L.log('train/Max gumble weighted aug idx', agent.neural_aug.gumble_linear.weight.argmax(), step)
+                    L.log('train/Gumble logits entropy', entropy(agent.neural_aug.gumble_linear.weights.numpy()), step)
+                elif args.neural_augs == 'mix-up':
+                    L.log('train/Max mix-up weighted aug idx', agent.neural_aug[0].weight.argmax(), step)
+                    L.log('train/Linear logits entropy', entropy(agent.neural_aug.gumble_linear.weights.numpy()), step)
 
             obs = env.reset()
             done = False
