@@ -320,6 +320,7 @@ class RadSacAgent(object):
             "rand_conv": rad.random_convolution,
             "color_jitter": rad.random_color_jitter,
             "translate": rad.random_translate,
+            "center_crop": rad.center_random_crop,
             "no_aug": rad.no_aug,
         }
 
