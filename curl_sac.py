@@ -445,7 +445,7 @@ class RadSacAgent(object):
             return pi.cpu().data.numpy().flatten()
     
 
-    def calculate_critic_loss(self, obs, action, reward, next_obs, not_done):
+    def calculate_critic_loss(self, obs, action, reward, next_obs, not_done, L, step):
         with torch.no_grad():
             _, policy_action, log_pi, _ = self.actor(next_obs)
             target_Q1, target_Q2 = self.critic_target(next_obs, policy_action)
@@ -456,9 +456,17 @@ class RadSacAgent(object):
         current_Q1, current_Q2 = self.critic(
             obs, action, detach_encoder=self.detach_encoder
         )
-        return F.mse_loss(current_Q1, target_Q) + F.mse_loss(
-            current_Q2, target_Q
-        )
+
+        Q1_loss = F.mse_loss(current_Q1, target_Q)
+        Q2_loss = F.mse_loss(current_Q2, target_Q)
+
+        L.log("train/Q1 loss", Q1_loss, step)
+        L.log("train/Q2 loss", Q2_loss, step)
+        L.log("train/Mean Target Q", torch.mean(target_Q), step)
+        L.log("train/Mean Q1", torch.mean(current_Q1))
+        L.log('train/Mean Q2', torch.mean(current_Q2))
+
+        return Q1_loss + Q2_loss
 
 
     def optimize_critic(self, loss, L, step):
@@ -474,7 +482,7 @@ class RadSacAgent(object):
 
 
     def update_critic(self, obs, action, reward, next_obs, not_done, L, step):
-        critic_loss = self.calculate_critic_loss(obs=obs, action=action, reward=reward, next_obs=next_obs, not_done=not_done)
+        critic_loss = self.calculate_critic_loss(obs=obs, action=action, reward=reward, next_obs=next_obs, not_done=not_done, L=L, step=step)
         self.optimize_critic(loss=critic_loss, L=L, step=step)
     
 
@@ -545,11 +553,11 @@ class RadSacAgent(object):
                 func_dict = {key: func}
                 if is_first:
                     obs, action, reward, next_obs, not_done, idxs = replay_buffer.sample_rad(func_dict, return_idxes=True)
-                    score = self.calculate_critic_loss(obs=obs, action=action, reward=reward, next_obs=next_obs, not_done=not_done)
                     is_first = False
                 else:
                     obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(func_dict, idxs=idxs)
-                    score = self.calculate_critic_loss(obs=obs, action=action, reward=reward, next_obs=next_obs, not_done=not_done)
+                
+                score = self.calculate_critic_loss(obs=obs, action=action, reward=reward, next_obs=next_obs, not_done=not_done, L=L, step=step)
                 
                 if score > best_score:
                     best_score = score
