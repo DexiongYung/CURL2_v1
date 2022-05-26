@@ -72,6 +72,7 @@ def parse_args():
     parser.add_argument("--device_id", default=0, type=int)
     # data augs
     parser.add_argument("--data_augs", default="crop", type=str)
+    parser.add_argument("--pba_mode", default=None, type=str)
     parser.add_argument("--log_interval", default=100, type=int)
     args = parser.parse_args()
     return args
@@ -171,6 +172,7 @@ def make_agent(obs_shape, action_shape, args, device):
             detach_encoder=args.detach_encoder,
             latent_dim=args.latent_dim,
             data_augs=args.data_augs,
+            pba_mode=args.pba_mode
         )
     else:
         assert "agent is not supported: %s" % args.agent

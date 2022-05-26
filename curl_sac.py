@@ -293,6 +293,7 @@ class RadSacAgent(object):
         detach_encoder=False,
         latent_dim=128,
         data_augs="",
+        pba_mode=None,
     ):
         self.device = device
         self.discount = discount
@@ -307,6 +308,7 @@ class RadSacAgent(object):
         self.detach_encoder = detach_encoder
         self.encoder_type = encoder_type
         self.data_augs = data_augs
+        self.pba_mode = pba_mode
 
         self.augs_funcs = {}
 
@@ -327,6 +329,15 @@ class RadSacAgent(object):
         for aug_name in self.data_augs.split("-"):
             assert aug_name in aug_to_func, "invalid data aug string"
             self.augs_funcs[aug_name] = aug_to_func[aug_name]
+        
+        if self.pba_mode:
+            self.aug_score_dict = dict()
+            for key, _ in self.augs_funcs:
+                self.aug_score_dict[key] = 0
+        else:
+            self.aug_score_dict = None
+
+        self.last_step_best_aug_idx = None
 
         self.actor = Actor(
             obs_shape,
@@ -432,8 +443,9 @@ class RadSacAgent(object):
             obs = obs.unsqueeze(0)
             mu, pi, _, _ = self.actor(obs, compute_log_pi=False)
             return pi.cpu().data.numpy().flatten()
+    
 
-    def update_critic(self, obs, action, reward, next_obs, not_done, L, step):
+    def calculate_critic_loss(self, obs, action, reward, next_obs, not_done):
         with torch.no_grad():
             _, policy_action, log_pi, _ = self.actor(next_obs)
             target_Q1, target_Q2 = self.critic_target(next_obs, policy_action)
@@ -444,18 +456,27 @@ class RadSacAgent(object):
         current_Q1, current_Q2 = self.critic(
             obs, action, detach_encoder=self.detach_encoder
         )
-        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
+        return F.mse_loss(current_Q1, target_Q) + F.mse_loss(
             current_Q2, target_Q
         )
-        if step % self.log_interval == 0:
-            L.log("train_critic/loss", critic_loss, step)
 
+
+    def optimize_critic(self, loss, L, step):
+        if step % self.log_interval == 0:
+            L.log("train_critic/loss", loss, step)
+        
         # Optimize the critic
         self.critic_optimizer.zero_grad()
-        critic_loss.backward()
+        loss.backward()
         self.critic_optimizer.step()
 
         self.critic.log(L, step)
+
+
+    def update_critic(self, obs, action, reward, next_obs, not_done, L, step):
+        critic_loss = self.calculate_critic_loss(obs=obs, action=action, reward=reward, next_obs=next_obs, not_done=not_done)
+        self.optimize_critic(loss=critic_loss, L=L, step=step)
+    
 
     def update_actor_and_alpha(self, obs, L, step):
         # detach encoder, so we don't update it with the actor loss
@@ -515,17 +536,39 @@ class RadSacAgent(object):
             L.log("train/curl_loss", loss, step)
 
     def update(self, replay_buffer, L, step):
-        if self.encoder_type == "pixel":
-            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
-                self.augs_funcs
-            )
+        if self.pba_mode:
+            is_first = True
+            idxs = None
+            best_score = float('-inf')
+            best_func_key = None
+            for key, func in self.augs_funcs.items():
+                func_dict = {key: func}
+                if is_first:
+                    obs, action, reward, next_obs, not_done, idxs = replay_buffer.sample_rad(func_dict, return_idxes=True)
+                    score = self.calculate_critic_loss(obs=obs, action=action, reward=reward, next_obs=next_obs, not_done=not_done)
+                    is_first = False
+                else:
+                    obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(func_dict, idxs=idxs)
+                    score = self.calculate_critic_loss(obs=obs, action=action, reward=reward, next_obs=next_obs, not_done=not_done)
+                
+                if score > best_score:
+                    best_score = score
+                    best_func_key = key
+
+            self.optimize_critic(loss=best_score, L=L, step=step)
+            self.aug_score_dict[best_func_key] += 1
         else:
-            obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
+            if self.encoder_type == "pixel":
+                obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
+                    self.augs_funcs
+                )
+            else:
+                obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
+
+            self.update_critic(obs, action, reward, next_obs, not_done, L, step)
 
         if step % self.log_interval == 0:
             L.log("train/batch_reward", reward.mean(), step)
-
-        self.update_critic(obs, action, reward, next_obs, not_done, L, step)
 
         if step % self.actor_update_freq == 0:
             self.update_actor_and_alpha(obs, L, step)
