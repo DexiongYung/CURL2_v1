@@ -34,7 +34,7 @@
     "num_filters": 32,
     "num_layers": 4,
     "num_train_steps": 100000,
-    "pre_transform_image_size": 100,
+    "pre_transform_image_size": 108,
     "replay_buffer_capacity": 100000,
     "save_buffer": false,
     "save_model": true,
@@ -44,5 +44,5 @@
     "task_name": "swingup",
     "work_dir": "./logs",
     "neural_augs": "gumble",
-    "device_id": 1
+    "device_id": 0
 }
