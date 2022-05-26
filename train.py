@@ -1,3 +1,5 @@
+import sys
+import os
 import numpy as np
 import torch
 import argparse
@@ -9,6 +11,7 @@ import utils
 from logger import Logger
 from video import VideoRecorder
 from curl_sac import RadSacAgent
+from utils import print
 
 
 def parse_args():
@@ -247,6 +250,7 @@ def main():
     video = VideoRecorder(video_dir if args.save_video else None)
 
     os.makedirs(work_dir, exist_ok=True)
+    sys.stdout = open(os.path.join(work_dir, "stdout.txt"), "w", buffering=1)
     with open(os.path.join(work_dir, "args.json"), "w") as f:
         json.dump(vars(args), f, sort_keys=True, indent=4)
 
@@ -319,8 +323,7 @@ def main():
                 L.log("train/episode", episode, step)
 
                 if args.pba_mode:
-                    L.log("train/Last aug idx", agent.last_step_best_aug_idx, step)
-                    print('Aug score dict', agent.aug_score_dict)
+                    print(f'Aug score dict {agent.aug_score_dict}')
 
         # sample action for data collection
         if step < args.init_steps:

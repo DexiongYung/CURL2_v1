@@ -1,13 +1,13 @@
+import sys
+import builtins
 import torch
 import numpy as np
-import torch.nn as nn
 import gym
 import os
 from collections import deque
 import random
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import time
-from skimage.util.shape import view_as_windows
 
 
 class eval_mode(object):
@@ -314,3 +314,7 @@ def center_translates(image, size):
     w1 = (size - w) // 2
     outs[:, :, h1 : h1 + h, w1 : w1 + w] = image
     return outs
+
+def print(text):
+    builtins.print(text)
+    os.fsync(sys.stdout)
