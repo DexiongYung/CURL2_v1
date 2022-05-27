@@ -556,19 +556,18 @@ class RadSacAgent(object):
     
 
     def run_not_PBA(self, replay_buffer, L, step):
-        if self.pba_mode == "prune" and step >= 1000 and step % self.prune_interval == 0 and len(self.augs_funcs) > 1:
-            if self.pba_mode == "prune":
-                lowest_score = float('inf')
-                lowest_key = None
-                for key, score in self.aug_score_dict.items():
-                    if score < lowest_score:
-                        lowest_score = score
-                        lowest_key = key
+        if self.pba_mode == "prune" and step >= 999 and step % self.prune_interval == 0 and len(self.augs_funcs) > 1:
+            lowest_score = float('inf')
+            lowest_key = None
+            for key, score in self.aug_score_dict.items():
+                if score < lowest_score:
+                    lowest_score = score
+                    lowest_key = key
                 
-                del self.aug_score_dict[lowest_key]
-                del self.augs_funcs[lowest_key]
+            del self.aug_score_dict[lowest_key]
+            del self.augs_funcs[lowest_key]
             
-        if step >= 1000:
+        if step > 999:
             is_first = True
             idxs = None
             best_score = float('-inf')
@@ -596,15 +595,18 @@ class RadSacAgent(object):
             if self.pba_mode == "prune":
                 self.aug_score_dict[best_func_key] += 1
             elif self.pba_mode == "unused":
-                for key, val in self.aug_score_dict:
+                del_key = None
+                for key, val in self.aug_score_dict.items():
                     if key == best_func_key:
                         self.aug_score_dict[key] = 0
                     else:
                         if val + 1 > self.prune_interval:
-                            del self.aug_score_dict[key]
-                            del self.augs_funcs[key]
+                            del_key = key
                         else:
                             self.aug_score_dict[key] += 1
+                    
+                del self.aug_score_dict[del_key]
+                del self.augs_funcs[del_key]
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_rad({'no_aug':rad.no_aug})
 
