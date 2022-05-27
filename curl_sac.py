@@ -604,9 +604,10 @@ class RadSacAgent(object):
                             del_key = key
                         else:
                             self.aug_score_dict[key] += 1
-                    
-                del self.aug_score_dict[del_key]
-                del self.augs_funcs[del_key]
+
+                if del_key is not None:
+                    del self.aug_score_dict[del_key]
+                    del self.augs_funcs[del_key]
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_rad({'no_aug':rad.no_aug})
 
