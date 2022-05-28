@@ -331,7 +331,7 @@ class RadSacAgent(object):
             assert aug_name in aug_to_func, "invalid data aug string"
             self.augs_funcs[aug_name] = aug_to_func[aug_name]
         
-        print(f'Aug set is: {list(self.augs_funcs.keys())}')
+        print(f'Aug set is: {self.data_augs}')
 
         if self.pba_mode:
             if self.pba_mode == 'prune':

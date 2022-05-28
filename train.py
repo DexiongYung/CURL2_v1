@@ -229,8 +229,6 @@ def main():
     exp_name = os.path.join(
         env_name,
         args.id,
-        "seed_" + str(args.seed),
-        "train_steps_" + str(args.num_train_steps),
         ts,
     )
     work_dir = os.path.join(args.work_dir, exp_name)
