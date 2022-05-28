@@ -162,7 +162,13 @@ class ReplayBuffer(Dataset):
         if aug_funcs:
             for aug, func in aug_funcs.items():
                 # apply crop and cutout first
-                if "crop" in aug or "cutout" in aug:
+                if "crop" in aug:
+                    out = 84
+                    if obses.shape[-1] < 84:
+                        out = 64
+                    obses = func(obses, out=out)
+                    next_obses = func(next_obses, out=out)
+                elif "cutout" in aug:
                     obses = func(obses)
                     next_obses = func(next_obses)
                 elif "translate" in aug:
