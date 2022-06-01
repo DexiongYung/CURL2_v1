@@ -592,9 +592,7 @@ class RadSacAgent(object):
 
             self.optimize_critic(loss=best_score, L=L, step=step)
 
-            if self.pba_mode == "prune":
-                self.aug_score_dict[best_func_key] += 1
-            elif self.pba_mode == "unused":
+            if self.pba_mode == "unused":
                 del_key = None
                 for key, val in self.aug_score_dict.items():
                     if key == best_func_key:
@@ -608,6 +606,8 @@ class RadSacAgent(object):
                 if del_key is not None:
                     del self.aug_score_dict[del_key]
                     del self.augs_funcs[del_key]
+            else:
+                self.aug_score_dict[best_func_key] += 1
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_rad({'no_aug':rad.no_aug})
 
