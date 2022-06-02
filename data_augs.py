@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import kornia
 import torch.nn as nn
 from TransformLayer import ColorJitterLayer
 from utils import center_translates, center_crop_images
@@ -268,11 +269,22 @@ def random_color_jitter(imgs, b=0.4, c=0.4, s=0.4, h=0.5):
     imgs = imgs.view(-1, 3, h, w)
     transform_module = nn.Sequential(
         ColorJitterLayer(
-            brightness=b, contrast=c, saturation=s, hue=h, p=1.0, batch_size=128
+            brightness=b, contrast=c, saturation=s, hue=h, p=1.0, batch_size=b, stack_size=c
         )
     )
 
     imgs = transform_module(imgs).view(b, c, h, w)
+    return imgs
+
+
+def kornia_color_jitter(imgs, bright=0.4, contrast=0.4, satur=0.4, hue=0.49):
+    """
+    inputs np array outputs tensor
+    """
+    b, c, h, w = imgs.shape
+    imgs = imgs.view(-1, 3, h, w)
+    model = kornia.augmentation.ColorJitter(brightness=bright, contrast=contrast, saturation=satur, hue=hue)
+    imgs = model(imgs).view(b, c, h, w)
     return imgs
 
 

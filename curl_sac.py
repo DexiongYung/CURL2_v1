@@ -321,6 +321,8 @@ class RadSacAgent(object):
             "color_jitter": rad.random_color_jitter,
             "translate": rad.random_translate,
             "center_crop": rad.center_random_crop,
+            "translate_center_crop": rad.translate_center_crop,
+            "kornia_jitter": rad.kornia_color_jitter,
             "no_aug": rad.no_aug,
         }
 
