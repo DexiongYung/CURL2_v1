@@ -303,6 +303,7 @@ def random_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
 
 def translate_center_crop(imgs, crop_sz, return_random_idxs=False, h1s=None, w1s=None):
     _, _, h, _ = imgs.shape
+    assert crop_sz <= h
     cropped_imgs = center_crop_images(image=imgs, output_size=crop_sz)
     return random_translate(imgs=cropped_imgs, size=h, return_random_idxs=return_random_idxs, h1s=h1s, w1s=w1s)
 
