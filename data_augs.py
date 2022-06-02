@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from TransformLayer import ColorJitterLayer
-from utils import center_translates
+from utils import center_translates, center_crop_images
 
 
 def random_crop(imgs, out=84):
@@ -260,7 +260,7 @@ def random_convolution(imgs):
     return total_out
 
 
-def random_color_jitter(imgs):
+def random_color_jitter(imgs, b=0.4, c=0.4, s=0.4, h=0.5):
     """
     inputs np array outputs tensor
     """
@@ -268,7 +268,7 @@ def random_color_jitter(imgs):
     imgs = imgs.view(-1, 3, h, w)
     transform_module = nn.Sequential(
         ColorJitterLayer(
-            brightness=0.4, contrast=0.4, saturation=0.4, hue=0.5, p=1.0, batch_size=128
+            brightness=b, contrast=c, saturation=s, hue=h, p=1.0, batch_size=128
         )
     )
 
@@ -287,6 +287,12 @@ def random_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
     if return_random_idxs:  # So can do the same to another set of imgs.
         return outs, dict(h1s=h1s, w1s=w1s)
     return outs
+
+
+def translate_center_crop(imgs, crop_sz, return_random_idxs=False, h1s=None, w1s=None):
+    _, _, h, _ = imgs.shape
+    cropped_imgs = center_crop_images(image=imgs, output_size=crop_sz)
+    return random_translate(imgs=cropped_imgs, size=h, return_random_idxs=return_random_idxs, h1s=h1s, w1s=w1s)
 
 
 def no_aug(x):
