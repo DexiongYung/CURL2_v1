@@ -1,6 +1,6 @@
 import numpy as np
 
-import rad as rad
+import data_augs as rad
 import torch
 import os
 from os import listdir
@@ -34,7 +34,7 @@ def show_stacked_imgs(x, max_display=12):
 
 if __name__ == "__main__":
     tnsrs_list = list()
-    folder = '../mujoco_samples/'
+    folder = './mujoco_samples/'
     sample_imgs_files = [os.path.join(folder, f) for f in listdir(folder) if isfile(join(folder, f))]
 
     for fp in sample_imgs_files:
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     cat_tnsrs = torch.unsqueeze(torch.concat(tnsrs_list, dim=0), dim=0)
 
     show_stacked_imgs(cat_tnsrs.numpy())
-    aug_tnsrs = rad.random_convolution(cat_tnsrs)
+    aug_tnsrs = rad.random_color_jitter(cat_tnsrs)
     show_stacked_imgs(aug_tnsrs.numpy())
     plt.show()
 
