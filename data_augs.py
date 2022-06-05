@@ -261,7 +261,7 @@ def random_convolution(imgs):
     return total_out
 
 
-def random_color_jitter(imgs, b=0.4, c=0.4, s=0.4, h=0.5):
+def random_color_jitter(imgs, bright=0.4, contrast=0.4, satur=0.4, hue=0.5):
     """
     inputs np array outputs tensor
     """
@@ -269,7 +269,7 @@ def random_color_jitter(imgs, b=0.4, c=0.4, s=0.4, h=0.5):
     imgs = imgs.view(-1, 3, h, w)
     transform_module = nn.Sequential(
         ColorJitterLayer(
-            brightness=b, contrast=c, saturation=s, hue=h, p=1.0, batch_size=b, stack_size=c
+            brightness=bright, contrast=contrast, saturation=satur, hue=hue, p=1.0, batch_size=b, stack_size=c
         )
     )
 
@@ -301,7 +301,7 @@ def random_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
     return outs
 
 
-def translate_center_crop(imgs, crop_sz, return_random_idxs=False, h1s=None, w1s=None):
+def translate_center_crop(imgs, crop_sz=84, return_random_idxs=False, h1s=None, w1s=None):
     _, _, h, _ = imgs.shape
     assert crop_sz <= h
     cropped_imgs = center_crop_images(image=imgs, output_size=crop_sz)

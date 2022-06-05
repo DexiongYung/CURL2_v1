@@ -159,11 +159,13 @@ class ReplayBuffer(Dataset):
         obses = self.obses[idxs]
         next_obses = self.next_obses[idxs]
         if aug_funcs:
-            for aug, func in aug_funcs.items():
+            for aug, func_dict in aug_funcs.items():
+                func = func_dict['func']
+                params = func_dict['params']
                 # apply crop and cutout first
                 if "crop" in aug or "cutout" in aug:
-                    obses = func(obses)
-                    next_obses = func(next_obses)
+                    obses = func(obses, **params)
+                    next_obses = func(next_obses, **params)
                 elif "translate" in aug:
                     og_obses = center_crop_images(obses, self.pre_image_size)
                     og_next_obses = center_crop_images(next_obses, self.pre_image_size)
@@ -183,12 +185,16 @@ class ReplayBuffer(Dataset):
 
         # augmentations go here
         if aug_funcs:
-            for aug, func in aug_funcs.items():
+            for aug, func_dict in aug_funcs.items():
+                func = func_dict['func']
+                params = func_dict['params']
                 # skip crop and cutout augs
+
                 if "crop" in aug or "cutout" in aug or "translate" in aug:
                     continue
-                obses = func(obses)
-                next_obses = func(next_obses)
+                
+                obses = func(obses, **params)
+                next_obses = func(next_obses, **params)
 
         return obses, actions, rewards, next_obses, not_dones
 
