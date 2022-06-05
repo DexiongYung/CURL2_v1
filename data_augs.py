@@ -24,7 +24,7 @@ def random_crop(imgs, out=84):
     return cropped
 
 
-def center_random_crop(imgs, out=84):
+def center_random_crop(imgs, out=92):
     """
     args:
     imgs: np.array shape (B,C,H,W)
