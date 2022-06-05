@@ -491,7 +491,8 @@ class RadSacAgent(object):
         loss.backward()
         self.critic_optimizer.step()
 
-        self.critic.log(L, step)
+        # TODD!!!
+        # self.critic.log(L, step)
 
 
     def update_critic(self, obs, action, reward, next_obs, not_done, L, step):
@@ -520,8 +521,9 @@ class RadSacAgent(object):
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         self.actor_optimizer.step()
-
-        self.actor.log(L, step)
+        
+        # TODO!!!
+        # self.actor.log(L, step)
 
         self.log_alpha_optimizer.zero_grad()
         alpha_loss = (self.alpha * (-log_pi - self.target_entropy).detach()).mean()
