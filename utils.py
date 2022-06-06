@@ -196,8 +196,11 @@ class ReplayBuffer(Dataset):
                 
                 obses = func(obses, **params)
                 next_obses = func(next_obses, **params)
-
-        return obses, actions, rewards, next_obses, not_dones
+        
+        if return_idxes:
+            return obses, actions, rewards, next_obses, not_dones, idxs
+        else:
+            return obses, actions, rewards, next_obses, not_dones
 
     def save(self, save_dir):
         if self.idx == self.last_save:

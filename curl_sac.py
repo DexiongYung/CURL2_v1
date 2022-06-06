@@ -1,3 +1,4 @@
+import random
 import numpy as np
 import torch
 import torch.nn as nn
@@ -323,11 +324,27 @@ class RadSacAgent(object):
             "rand_conv": dict(func=rad.random_convolution, params=dict()),
             "color_jitter": dict(func=rad.random_color_jitter, params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5)),
             "translate": dict(func=rad.random_translate, params=dict()),
-            "center_crop": dict(func=rad.center_random_crop, params=dict(out=84)),
+            "center_crop": dict(func=rad.center_random_crop, params=dict(out=92)),
             "translate_cc": dict(func=rad.translate_center_crop, params=dict(crop_sz=100)),
             "kornia_jitter": dict(func=rad.kornia_color_jitter, params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5)),
             "no_aug": dict(func=rad.no_aug, params=dict()),
         }
+
+        if self.pba_mode == "search":
+            self.aug_grid_search_dict = {
+                "grayscale": [dict(p=0.1), dict(p=0.5), dict(p=0.7), dict(p=0.9)],
+                "cutout": [dict(min_cut=0, max_cut=20), dict(min_cut=20, max_cut=40), dict(min_cut=30, max_cut=50)],
+                "cutout_color": [dict(min_cut=0, max_cut=20), dict(min_cut=20, max_cut=40), dict(min_cut=30, max_cut=50)],
+                "flip": [dict(p=0.1), dict(p=0.3), dict(p=0.5), dict(p=0.7), dict(p=0.9)],
+                "rotate": [dict(p=0.1), dict(p=0.5), dict(p=0.7), dict(p=0.9)],
+                "color_jitter": [dict(bright=0.2, contrast=0.2, satur=0.2, hue=0.3), dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.2),
+                    dict(bright=0.5, contrast=0.5, satur=0.5, hue=0.6), dict(bright=0.6, contrast=0.6, satur=0.6, hue=0.7)],
+                "center_crop": [dict(out=104), dict(out=80), dict(out=90), dict(out=75)],
+                "translate_cc": [dict(out=104), dict(out=80), dict(out=90), dict(out=75)],
+                "kornia_jitter": [dict(bright=0.2, contrast=0.2, satur=0.2, hue=0.3), dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.2),
+                    dict(bright=0.5, contrast=0.5, satur=0.5, hue=0.6), dict(bright=0.6, contrast=0.6, satur=0.6, hue=0.7)],
+            }
+
 
         for aug_name in self.data_augs.split("-"):
             assert aug_name in aug_to_func, "invalid data aug string"
@@ -336,15 +353,8 @@ class RadSacAgent(object):
         print(f'Aug set is: {self.data_augs}')
 
         if self.pba_mode:
-            if self.pba_mode == 'prune':
-                print(f'Prune PBA mode on! With prune step: {prune_interval}')
-                self.prune_interval = prune_interval
-            elif self.pba_mode == 'unused':
-                print(f'Unused PBA mode on! With prune step: {prune_interval}')
-                self.prune_interval = prune_interval
-            else:
-                self.prune_interval = None
-                print('Not PBA mode on!')
+            self.prune_interval = prune_interval
+            print(f'Prune PBA mode on! Setting: {self.pba_mode}. With prune step: {prune_interval}')
             self.aug_score_dict = dict()
             for key, _ in self.augs_funcs.items():
                 self.aug_score_dict[key] = 0
@@ -596,7 +606,7 @@ class RadSacAgent(object):
 
             self.optimize_critic(loss=best_score, L=L, step=step)
 
-            if self.pba_mode == "unused":
+            if self.pba_mode == "unused" or self.pba_mode == "search":
                 del_key = None
                 for key, val in self.aug_score_dict.items():
                     if key == best_func_key:
@@ -610,6 +620,15 @@ class RadSacAgent(object):
                 if del_key is not None:
                     del self.aug_score_dict[del_key]
                     del self.augs_funcs[del_key]
+                
+                    if self.pba_mode == "search":
+                        aug_keys = list(self.augs_funcs.keys())
+                        sample = random.sample(aug_keys, 1)[0]
+                        aug_params = self.aug_grid_search_dict.get(sample, False)
+
+                        if aug_params:
+                            sampled_param = random.sample(aug_params, 1)[0]
+                            self.augs_funcs[sample]['params'] = sampled_param
             else:
                 self.aug_score_dict[best_func_key] += 1
         else:
