@@ -331,6 +331,7 @@ class RadSacAgent(object):
         }
 
         if self.pba_mode == "search":
+            self.search_idx = 0
             self.aug_grid_search_dict = {
                 "grayscale": [dict(p=0.1), dict(p=0.5), dict(p=0.7), dict(p=0.9)],
                 "cutout": [dict(min_cut=0, max_cut=20), dict(min_cut=20, max_cut=40), dict(min_cut=30, max_cut=50)],
@@ -623,12 +624,18 @@ class RadSacAgent(object):
                 
                     if self.pba_mode == "search":
                         aug_keys = list(self.augs_funcs.keys())
-                        sample = random.sample(aug_keys, 1)[0]
-                        aug_params = self.aug_grid_search_dict.get(sample, False)
+                        aug_params = False
+
+                        while not aug_params and len(aug_keys) > 0:
+                            sample = random.sample(aug_keys, 1)[0]
+                            aug_keys.remove(sample)
+                            aug_params = self.aug_grid_search_dict.get(sample, False)
 
                         if aug_params:
                             sampled_param = random.sample(aug_params, 1)[0]
-                            self.augs_funcs[sample]['params'] = sampled_param
+                            self.augs_funcs['added_aug_' + str(self.search_idx)] = dict(func=self.augs_funcs[sample], params=sampled_param)
+                            self.search_idx += 1
+                            aug_params.remove(sampled_param)
             else:
                 self.aug_score_dict[best_func_key] += 1
         else:
