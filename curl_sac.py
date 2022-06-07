@@ -331,7 +331,6 @@ class RadSacAgent(object):
         }
 
         if self.pba_mode == "search":
-            self.search_idx = 0
             self.aug_grid_search_dict = {
                 "grayscale": [dict(p=0.1), dict(p=0.5), dict(p=0.7), dict(p=0.9)],
                 "cutout": [dict(min_cut=0, max_cut=20), dict(min_cut=20, max_cut=40), dict(min_cut=30, max_cut=50)],
@@ -614,7 +613,8 @@ class RadSacAgent(object):
                         self.aug_score_dict[key] = 0
                     else:
                         if val + 1 > self.prune_interval:
-                            del_key = key
+                            if del_key is None:
+                                del_key = key
                         else:
                             self.aug_score_dict[key] += 1
 
@@ -623,20 +623,29 @@ class RadSacAgent(object):
                     del self.augs_funcs[del_key]
                 
                     if self.pba_mode == "search":
-                        aug_keys = list(self.augs_funcs.keys())
+                        aug_keys = list()
+
+                        for key in list(self.augs_funcs.keys()):
+                            curr_key = key.split('/')[0]
+                            
+                            if curr_key not in aug_keys:
+                                aug_keys.append(curr_key)
+
                         aug_params = False
+                        sample_key = None
+                        sample_key_og = None
 
                         while not aug_params and len(aug_keys) > 0:
-                            sample = random.sample(aug_keys, 1)[0]
-                            aug_keys.remove(sample)
-                            aug_params = self.aug_grid_search_dict.get(sample, False)
+                            sample_key_og = random.sample(aug_keys, 1)[0]
+                            sample_key = sample_key_og.split('/')[0]
+                            aug_keys.remove(sample_key_og)
+                            aug_params = self.aug_grid_search_dict.get(sample_key, False)
 
                         if aug_params:
                             sampled_param = random.sample(aug_params, 1)[0]
-                            new_key = f'added_{sample}_' + str(self.search_idx)
-                            self.augs_funcs[new_key] = dict(func=self.augs_funcs[sample], params=sampled_param)
-                            self.aug_score_dict[new_key] = 0
-                            self.search_idx += 1
+                            new_key = sample_key + '/' + str(sampled_param)
+                            self.augs_funcs[new_key] = dict(func=self.augs_funcs[sample_key_og]['func'], params=sampled_param)
+                            self.aug_score_dict[new_key] = self.aug_score_dict[sample_key]
                             aug_params.remove(sampled_param)
             else:
                 self.aug_score_dict[best_func_key] += 1
