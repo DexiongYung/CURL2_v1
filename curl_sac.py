@@ -314,7 +314,7 @@ class RadSacAgent(object):
 
         self.augs_funcs = {}
 
-        aug_to_func = {
+        self.aug_to_func = {
             "crop": dict(func=rad.random_crop, params=dict(out=84)),
             "grayscale": dict(func=rad.random_grayscale, params=dict(p=0.3)),
             "cutout": dict(func=rad.random_cutout, params=dict(min_cut=10, max_cut=30)),
@@ -333,22 +333,22 @@ class RadSacAgent(object):
         if self.pba_mode == "search":
             self.aug_grid_search_dict = {
                 "grayscale": [dict(p=0.1), dict(p=0.5), dict(p=0.7), dict(p=0.9)],
-                "cutout": [dict(min_cut=0, max_cut=20), dict(min_cut=20, max_cut=40), dict(min_cut=30, max_cut=50)],
-                "cutout_color": [dict(min_cut=0, max_cut=20), dict(min_cut=20, max_cut=40), dict(min_cut=30, max_cut=50)],
-                "flip": [dict(p=0.1), dict(p=0.3), dict(p=0.5), dict(p=0.7), dict(p=0.9)],
+                "cutout": [dict(min_cut=0, max_cut=20), dict(min_cut=20, max_cut=40), dict(min_cut=30, max_cut=50), dict(min_cut=40, max_cut=60)],
+                "cutout_color": [dict(min_cut=0, max_cut=20), dict(min_cut=20, max_cut=40), dict(min_cut=30, max_cut=50), dict(min_cut=40, max_cut=60)],
+                "flip": [dict(p=0.1), dict(p=0.3), dict(p=0.5), dict(p=0.7)],
                 "rotate": [dict(p=0.1), dict(p=0.5), dict(p=0.7), dict(p=0.9)],
                 "color_jitter": [dict(bright=0.2, contrast=0.2, satur=0.2, hue=0.3), dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.2),
                     dict(bright=0.5, contrast=0.5, satur=0.5, hue=0.6), dict(bright=0.6, contrast=0.6, satur=0.6, hue=0.7)],
-                "center_crop": [dict(out=104), dict(out=80), dict(out=90), dict(out=75), dict(out=95)],
-                "translate_cc": [dict(out=104), dict(out=80), dict(out=90), dict(out=75), dict(out=95)],
+                "center_crop": [dict(out=104), dict(out=80), dict(out=90), dict(out=75)],
+                "translate_cc": [dict(out=104), dict(out=80), dict(out=90), dict(out=75)],
                 "kornia_jitter": [dict(bright=0.2, contrast=0.2, satur=0.2, hue=0.3), dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.2),
                     dict(bright=0.5, contrast=0.5, satur=0.5, hue=0.6), dict(bright=0.6, contrast=0.6, satur=0.6, hue=0.7)],
             }
 
 
         for aug_name in self.data_augs.split("-"):
-            assert aug_name in aug_to_func, "invalid data aug string"
-            self.augs_funcs[aug_name] = aug_to_func[aug_name]
+            assert aug_name in self.aug_to_func, "invalid data aug string"
+            self.augs_funcs[aug_name] = self.aug_to_func[aug_name]
         
         print(f'Aug set is: {self.data_augs}')
 
@@ -633,19 +633,26 @@ class RadSacAgent(object):
 
                         aug_params = False
                         sample_key = None
-                        sample_key_og = None
 
                         while not aug_params and len(aug_keys) > 0:
-                            sample_key_og = random.sample(aug_keys, 1)[0]
-                            sample_key = sample_key_og.split('/')[0]
-                            aug_keys.remove(sample_key_og)
+                            sample_key = random.sample(aug_keys, 1)[0]
+                            aug_keys.remove(sample_key)
                             aug_params = self.aug_grid_search_dict.get(sample_key, False)
 
                         if aug_params:
                             sampled_param = random.sample(aug_params, 1)[0]
                             new_key = sample_key + '/' + str(sampled_param)
-                            self.augs_funcs[new_key] = dict(func=self.augs_funcs[sample_key_og]['func'], params=sampled_param)
-                            self.aug_score_dict[new_key] = self.aug_score_dict[sample_key]
+                            self.augs_funcs[new_key] = dict(func=self.aug_to_func[sample_key]['func'], params=sampled_param)
+
+                            count = 0
+                            sum = 0
+
+                            for key in list(self.aug_score_dict):
+                                if sample_key in key:
+                                    count += 1
+                                    sum += self.aug_score_dict[key]
+
+                            self.aug_score_dict[new_key] = int(sum/count)
                             aug_params.remove(sampled_param)
             else:
                 self.aug_score_dict[best_func_key] += 1
