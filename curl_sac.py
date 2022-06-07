@@ -316,11 +316,11 @@ class RadSacAgent(object):
 
         self.aug_to_func = {
             "crop": dict(func=rad.random_crop, params=dict(out=84)),
-            "grayscale": dict(func=rad.random_grayscale, params=dict(p=0.3)),
+            "grayscale": dict(func=rad.random_grayscale, params=dict(p=1)),
             "cutout": dict(func=rad.random_cutout, params=dict(min_cut=10, max_cut=30)),
             "cutout_color": dict(func=rad.random_cutout_color, params=dict(min_cut=10, max_cut=30)),
-            "flip": dict(func=rad.random_flip, params=dict(p=0.2)),
-            "rotate": dict(func=rad.random_rotation, params=dict(p=0.3)),
+            "flip": dict(func=rad.random_flip, params=dict(p=1)),
+            "rotate": dict(func=rad.random_rotation, params=dict(p=1)),
             "rand_conv": dict(func=rad.random_convolution, params=dict()),
             "color_jitter": dict(func=rad.random_color_jitter, params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5)),
             "translate": dict(func=rad.random_translate, params=dict()),
@@ -332,11 +332,8 @@ class RadSacAgent(object):
 
         if self.pba_mode == "search":
             self.aug_grid_search_dict = {
-                "grayscale": [dict(p=0.1), dict(p=0.5), dict(p=0.7), dict(p=0.9)],
                 "cutout": [dict(min_cut=0, max_cut=20), dict(min_cut=20, max_cut=40), dict(min_cut=30, max_cut=50), dict(min_cut=40, max_cut=60)],
                 "cutout_color": [dict(min_cut=0, max_cut=20), dict(min_cut=20, max_cut=40), dict(min_cut=30, max_cut=50), dict(min_cut=40, max_cut=60)],
-                "flip": [dict(p=0.1), dict(p=0.3), dict(p=0.5), dict(p=0.7)],
-                "rotate": [dict(p=0.1), dict(p=0.5), dict(p=0.7), dict(p=0.9)],
                 "color_jitter": [dict(bright=0.2, contrast=0.2, satur=0.2, hue=0.3), dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.2),
                     dict(bright=0.5, contrast=0.5, satur=0.5, hue=0.6), dict(bright=0.6, contrast=0.6, satur=0.6, hue=0.7)],
                 "center_crop": [dict(out=104), dict(out=80), dict(out=90), dict(out=75)],
@@ -657,7 +654,7 @@ class RadSacAgent(object):
             else:
                 self.aug_score_dict[best_func_key] += 1
         else:
-            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad({'no_aug':rad.no_aug})
+            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad({'no_aug':rad.no_aug, 'params': dict()})
 
         return best_obs, action, reward, best_next_obs, not_done
 
