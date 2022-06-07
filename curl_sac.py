@@ -340,8 +340,8 @@ class RadSacAgent(object):
                 "rotate": [dict(p=0.1), dict(p=0.5), dict(p=0.7), dict(p=0.9)],
                 "color_jitter": [dict(bright=0.2, contrast=0.2, satur=0.2, hue=0.3), dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.2),
                     dict(bright=0.5, contrast=0.5, satur=0.5, hue=0.6), dict(bright=0.6, contrast=0.6, satur=0.6, hue=0.7)],
-                "center_crop": [dict(out=104), dict(out=80), dict(out=90), dict(out=75)],
-                "translate_cc": [dict(out=104), dict(out=80), dict(out=90), dict(out=75)],
+                "center_crop": [dict(out=104), dict(out=80), dict(out=90), dict(out=75), dict(out=95)],
+                "translate_cc": [dict(out=104), dict(out=80), dict(out=90), dict(out=75), dict(out=95)],
                 "kornia_jitter": [dict(bright=0.2, contrast=0.2, satur=0.2, hue=0.3), dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.2),
                     dict(bright=0.5, contrast=0.5, satur=0.5, hue=0.6), dict(bright=0.6, contrast=0.6, satur=0.6, hue=0.7)],
             }
