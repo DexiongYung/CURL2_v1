@@ -633,7 +633,9 @@ class RadSacAgent(object):
 
                         if aug_params:
                             sampled_param = random.sample(aug_params, 1)[0]
-                            self.augs_funcs['added_aug_' + str(self.search_idx)] = dict(func=self.augs_funcs[sample], params=sampled_param)
+                            new_key = 'added_aug_' + str(self.search_idx)
+                            self.augs_funcs[new_key] = dict(func=self.augs_funcs[sample], params=sampled_param)
+                            self.aug_score_dict[new_key] = 0
                             self.search_idx += 1
                             aug_params.remove(sampled_param)
             else:
