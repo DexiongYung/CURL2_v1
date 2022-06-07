@@ -1,4 +1,5 @@
 import random
+from readline import parse_and_bind
 import numpy as np
 import torch
 import torch.nn as nn
@@ -314,21 +315,38 @@ class RadSacAgent(object):
 
         self.augs_funcs = {}
 
-        self.aug_to_func = {
-            "crop": dict(func=rad.random_crop, params=dict(out=84)),
-            "grayscale": dict(func=rad.random_grayscale, params=dict(p=1)),
-            "cutout": dict(func=rad.random_cutout, params=dict(min_cut=10, max_cut=30)),
-            "cutout_color": dict(func=rad.random_cutout_color, params=dict(min_cut=10, max_cut=30)),
-            "flip": dict(func=rad.random_flip, params=dict(p=1)),
-            "rotate": dict(func=rad.random_rotation, params=dict(p=1)),
-            "rand_conv": dict(func=rad.random_convolution, params=dict()),
-            "color_jitter": dict(func=rad.random_color_jitter, params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5)),
-            "translate": dict(func=rad.random_translate, params=dict()),
-            "center_crop": dict(func=rad.center_random_crop, params=dict(out=92)),
-            "translate_cc": dict(func=rad.translate_center_crop, params=dict(crop_sz=100)),
-            "kornia_jitter": dict(func=rad.kornia_color_jitter, params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5)),
-            "no_aug": dict(func=rad.no_aug, params=dict()),
-        }
+        if self.pba_mode in ["warm_up", "tune"]:
+            self.aug_to_func = {
+                "crop": dict(func=rad.random_crop, params=dict(out=100)),
+                "grayscale": dict(func=rad.random_grayscale, params=dict(p=0.1)),
+                "cutout": dict(func=rad.random_cutout, params=dict(min_cut=0, max_cut=10)),
+                "cutout_color": dict(func=rad.random_cutout_color, params=dict(min_cut=0, max_cut=10)),
+                "flip": dict(func=rad.random_flip, params=dict(p=0.1)),
+                "rotate": dict(func=rad.random_rotation, params=dict(p=0.1)),
+                "rand_conv": dict(func=rad.random_convolution, params=dict()),
+                "color_jitter": dict(func=rad.random_color_jitter, params=dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.1)),
+                "translate": dict(func=rad.random_translate, params=dict()),
+                "center_crop": dict(func=rad.center_random_crop, params=dict(out=self.image_size - 4)),
+                "translate_cc": dict(func=rad.translate_center_crop, params=dict(crop_sz=self.image_size - 4)),
+                "kornia_jitter": dict(func=rad.kornia_color_jitter, params=dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.1)),
+                "no_aug": dict(func=rad.no_aug, params=dict()),
+            }
+        else:
+            self.aug_to_func = {
+                "crop": dict(func=rad.random_crop, params=dict(out=84)),
+                "grayscale": dict(func=rad.random_grayscale, params=dict(p=1)),
+                "cutout": dict(func=rad.random_cutout, params=dict(min_cut=10, max_cut=30)),
+                "cutout_color": dict(func=rad.random_cutout_color, params=dict(min_cut=10, max_cut=30)),
+                "flip": dict(func=rad.random_flip, params=dict(p=1)),
+                "rotate": dict(func=rad.random_rotation, params=dict(p=1)),
+                "rand_conv": dict(func=rad.random_convolution, params=dict()),
+                "color_jitter": dict(func=rad.random_color_jitter, params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5)),
+                "translate": dict(func=rad.random_translate, params=dict()),
+                "center_crop": dict(func=rad.center_random_crop, params=dict(out=92)),
+                "translate_cc": dict(func=rad.translate_center_crop, params=dict(crop_sz=100)),
+                "kornia_jitter": dict(func=rad.kornia_color_jitter, params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5)),
+                "no_aug": dict(func=rad.no_aug, params=dict()),
+            }
 
         if self.pba_mode == "search":
             self.aug_grid_search_dict = {
@@ -340,6 +358,18 @@ class RadSacAgent(object):
                 "translate_cc": [dict(out=104), dict(out=80), dict(out=90), dict(out=75)],
                 "kornia_jitter": [dict(bright=0.2, contrast=0.2, satur=0.2, hue=0.3), dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.2),
                     dict(bright=0.5, contrast=0.5, satur=0.5, hue=0.6), dict(bright=0.6, contrast=0.6, satur=0.6, hue=0.7)],
+            }
+        elif self.pba_mode in ["warm_up", "tune"]:
+            self.aug_grid_search_dict = {
+                "flip": [dict(p=float(i/10)) for i in range(2,11)],
+                "grayscale": [dict(p=float(i/10)) for i in range(2,11)],
+                "rotate": [dict(p=float(i/10)) for i in range(2,11)],
+                "cutout": [dict(min_cut=i*10, max_cut=i*10 + 10) for i in range(2, 11)],
+                "cutout_color": [dict(min_cut=10*i, max_cut=10*i + 10) for i in range(2, 11)],
+                "color_jitter": [dict(bright=i/10, contrast=i/10, satur=i/10, hue=i/10) for i in range(2, 11)],
+                "center_crop": [dict(out=self.image_size-4*i) for i in range(2, 11)],
+                "translate_cc": [dict(out=self.image_size-4*i) for i in range(2, 11)],
+                "kornia_jitter": [dict(bright=i/10, contrast=i/10, satur=i/10, hue=i/10) for i in range(2, 11)]
             }
 
 
@@ -603,7 +633,7 @@ class RadSacAgent(object):
 
             self.optimize_critic(loss=best_score, L=L, step=step)
 
-            if self.pba_mode == "unused" or self.pba_mode == "search":
+            if self.pba_mode in ["unused", "search", "warm_up", "tune"]:
                 del_key = None
                 for key, val in self.aug_score_dict.items():
                     if key == best_func_key:
@@ -619,7 +649,7 @@ class RadSacAgent(object):
                     del self.aug_score_dict[del_key]
                     del self.augs_funcs[del_key]
                 
-                    if self.pba_mode == "search":
+                    if self.pba_mode in ["search", "warm_up"]:
                         aug_keys = list()
 
                         for key in list(self.augs_funcs.keys()):
@@ -637,7 +667,11 @@ class RadSacAgent(object):
                             aug_params = self.aug_grid_search_dict.get(sample_key, False)
 
                         if aug_params:
-                            sampled_param = random.sample(aug_params, 1)[0]
+                            if self.pba_mode == "search":
+                                sampled_param = random.sample(aug_params, 1)[0]
+                            elif self.pba_mode == "warm_up":
+                                sampled_param = aug_params[0]
+
                             new_key = sample_key + '/' + str(sampled_param)
                             self.augs_funcs[new_key] = dict(func=self.aug_to_func[sample_key]['func'], params=sampled_param)
 
@@ -651,6 +685,15 @@ class RadSacAgent(object):
 
                             self.aug_score_dict[new_key] = int(sum/count)
                             aug_params.remove(sampled_param)
+                    elif self.pba_mode == "tune":
+                        og_key_of_del = del_key.split('/')[0]
+                        aug_params = self.aug_grid_search_dict.get(og_key_of_del, False)
+
+                        if aug_params:
+                            param_selected = aug_params[0]
+                            aug_params.remove(param_selected)
+                            new_key = og_key_of_del + '/' + str(param_selected)
+                            self.augs_funcs[new_key] = dict(func=self.aug_to_func[og_key_of_del]['func'], params=param_selected)
             else:
                 self.aug_score_dict[best_func_key] += 1
         else:
