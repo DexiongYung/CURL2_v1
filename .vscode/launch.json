@@ -50,6 +50,15 @@
             "args": ["--config_file", "./configs/not_PBA_unused.json"]
         },
         {
+            "name": "Tune",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/tune.json"]
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
