@@ -694,6 +694,7 @@ class RadSacAgent(object):
                             aug_params.remove(param_selected)
                             new_key = og_key_of_del + '/' + str(param_selected)
                             self.augs_funcs[new_key] = dict(func=self.aug_to_func[og_key_of_del]['func'], params=param_selected)
+                            self.aug_score_dict[new_key] = 0
             else:
                 self.aug_score_dict[best_func_key] += 1
         else:
