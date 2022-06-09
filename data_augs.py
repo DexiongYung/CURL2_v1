@@ -301,6 +301,22 @@ def random_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
     return outs
 
 
+def in_frame_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
+    _, _, _, w = imgs.shape
+    if return_random_idxs:
+        outs, dims = random_translate(imgs=imgs, size=size, return_random_idxs=return_random_idxs, h1s=h1s, w1s=w1s)
+        return center_crop_images(image=outs, output_size=w), dims
+    else:
+        outs = random_translate(imgs=imgs, size=size, return_random_idxs=return_random_idxs, h1s=h1s, w1s=w1s)
+        return center_crop_images(image=outs, output_size=w)
+
+
+def crop_translate(imgs, out, return_random_idxs=False, h1s=None, w1s=None):
+    _, _, h, _ = imgs.shape
+    cropped_imgs = random_crop(imgs=imgs, out=out)
+    return random_translate(imgs=cropped_imgs, size=h, return_random_idxs=return_random_idxs, h1s=h1s, w1s=w1s)
+
+
 def translate_center_crop(imgs, crop_sz=100, return_random_idxs=False, h1s=None, w1s=None):
     _, _, h, _ = imgs.shape
     assert crop_sz <= h
