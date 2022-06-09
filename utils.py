@@ -171,9 +171,9 @@ class ReplayBuffer(Dataset):
                     og_obses = center_crop_images(obses, self.pre_image_size)
                     og_next_obses = center_crop_images(next_obses, self.pre_image_size)
                     obses, rndm_idxs = func(
-                        og_obses, self.image_size, return_random_idxs=True
+                        og_obses, return_random_idxs=True, **params
                     )
-                    next_obses = func(og_next_obses, self.image_size, **rndm_idxs)
+                    next_obses = func(og_next_obses, **rndm_idxs, **params)
 
         obses = torch.as_tensor(obses, device=self.device).float()
         next_obses = torch.as_tensor(next_obses, device=self.device).float()

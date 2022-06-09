@@ -329,6 +329,8 @@ class RadSacAgent(object):
                 "center_crop": dict(func=rad.center_random_crop, params=dict(out=self.image_size - 4)),
                 "translate_cc": dict(func=rad.translate_center_crop, params=dict(crop_sz=self.image_size - 4)),
                 "kornia_jitter": dict(func=rad.kornia_color_jitter, params=dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.1)),
+                "in_frame_translate": dict(func=rad.in_frame_translate, params=dict(size=self.image_size + 4)),
+                "crop_translate": dict(func=rad.crop_translate, params=dict(out=self.image_size - 4)),
                 "no_aug": dict(func=rad.no_aug, params=dict()),
             }
         else:
@@ -345,8 +347,8 @@ class RadSacAgent(object):
                 "center_crop": dict(func=rad.center_random_crop, params=dict(out=84)),
                 "translate_cc": dict(func=rad.translate_center_crop, params=dict(crop_sz=100)),
                 "kornia_jitter": dict(func=rad.kornia_color_jitter, params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5)),
-                "in_frame_translate": dict(func=rad.in_frame_translate, params=dict(size=94)),
-                "crop_translate": dict(func=rad.crop_translate, params=dict(size=100)),
+                "in_frame_translate": dict(func=rad.in_frame_translate, params=dict(size=110)),
+                "crop_translate": dict(func=rad.crop_translate, params=dict(out=100)),
                 "no_aug": dict(func=rad.no_aug, params=dict()),
             }
 
@@ -370,8 +372,10 @@ class RadSacAgent(object):
                 "cutout_color": [dict(min_cut=10*i, max_cut=10*i + 10) for i in range(1, 11)],
                 "color_jitter": [dict(bright=i/10, contrast=i/10, satur=i/10, hue=i/10) for i in range(2, 11)],
                 "center_crop": [dict(out=self.image_size-4*i) for i in range(2, 11)],
-                "translate_cc": [dict(out=self.image_size-4*i) for i in range(2, 11)],
-                "kornia_jitter": [dict(bright=i/10, contrast=i/10, satur=i/10, hue=i/10) for i in range(2, 11)]
+                "translate_cc": [dict(crop_sz=self.image_size-4*i) for i in range(2, 11)],
+                "kornia_jitter": [dict(bright=i/10, contrast=i/10, satur=i/10, hue=i/10) for i in range(2, 11)],
+                "in_frame_translate": [dict(size=self.image_size+4*i) for i in range(2, 11)],
+                "crop_translate": [dict(out=self.image_size-4*i) for i in range(2, 11)],
             }
 
         for aug_name in self.data_augs.split("-"):
