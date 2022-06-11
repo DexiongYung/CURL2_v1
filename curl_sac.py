@@ -692,7 +692,7 @@ class RadSacAgent(object):
                         aug_params = self.aug_grid_search_dict.get(og_key_of_del, False)
 
                         if not aug_params and self.aug_grid_search_dict:
-                            aug_params = random.sample(list(self.aug_grid_search_dict.keys()))[0]
+                            aug_params = random.sample(list(self.aug_grid_search_dict.keys()), 1)[0]
 
                         if aug_params:
                             param_selected = aug_params[0]
