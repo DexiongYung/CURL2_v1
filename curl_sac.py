@@ -372,7 +372,7 @@ class RadSacAgent(object):
                 "center_crop": [dict(out=self.image_size-2*i) for i in range(2, 11)],
                 "translate_cc": [dict(crop_sz=self.image_size-2*i) for i in range(2, 11)],
                 "kornia_jitter": [dict(bright=i/10, contrast=i/10, satur=i/10, hue=i/10) for i in range(2, 11)],
-                "in_frame_translate": [dict(crop_sz=self.image_size+2*i) for i in range(2, 11)],
+                "in_frame_translate": [dict(size=self.image_size+2*i) for i in range(2, 11)],
                 "crop_translate": [dict(out=self.image_size-2*i) for i in range(2, 11)],
             }
 
