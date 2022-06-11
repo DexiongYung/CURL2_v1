@@ -315,7 +315,7 @@ class RadSacAgent(object):
 
         self.augs_funcs = {}
 
-        if self.pba_mode in ["warm_up", "tune"]:
+        if self.pba_mode in ["warm_up", "tune", "prune"]:
             self.aug_to_func = {
                 "grayscale": dict(func=rad.random_grayscale, params=dict(p=0.1)),
                 "cutout": dict(func=rad.random_cutout, params=dict(min_cut=0, max_cut=10)),
@@ -324,9 +324,11 @@ class RadSacAgent(object):
                 "rotate": dict(func=rad.random_rotation, params=dict(p=0.1)),
                 "rand_conv": dict(func=rad.random_convolution, params=dict()),
                 "color_jitter": dict(func=rad.random_color_jitter, params=dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.1)),
-                "center_crop": dict(func=rad.center_random_crop, params=dict(out=self.image_size - 4)),
-                "translate_cc": dict(func=rad.translate_center_crop, params=dict(crop_sz=self.image_size - 4)),
+                "center_crop": dict(func=rad.center_random_crop, params=dict(out=self.image_size - 2)),
+                "translate_cc": dict(func=rad.translate_center_crop, params=dict(crop_sz=self.image_size - 2)),
                 "kornia_jitter": dict(func=rad.kornia_color_jitter, params=dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.1)),
+                "in_frame_translate": dict(func=rad.in_frame_translate, params=dict(size=self.image_size + 2)),
+                "crop_translate": dict(func=rad.crop_translate, params=dict(out=self.image_size - 2)),
                 "no_aug": dict(func=rad.no_aug, params=dict()),
             }
         else:
@@ -343,6 +345,8 @@ class RadSacAgent(object):
                 "center_crop": dict(func=rad.center_random_crop, params=dict(out=96)),
                 "translate_cc": dict(func=rad.translate_center_crop, params=dict(crop_sz=92)),
                 "kornia_jitter": dict(func=rad.kornia_color_jitter, params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5)),
+                "in_frame_translate": dict(func=rad.in_frame_translate, params=dict(size=128)),
+                "crop_translate": dict(func=rad.crop_translate, params=dict(out=100)),
                 "no_aug": dict(func=rad.no_aug, params=dict()),
             }
 
@@ -357,7 +361,7 @@ class RadSacAgent(object):
                 "kornia_jitter": [dict(bright=0.2, contrast=0.2, satur=0.2, hue=0.3), dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.2),
                     dict(bright=0.5, contrast=0.5, satur=0.5, hue=0.6), dict(bright=0.6, contrast=0.6, satur=0.6, hue=0.7)],
             }
-        elif self.pba_mode in ["warm_up", "tune"]:
+        elif self.pba_mode in ["warm_up", "tune", "prune"]:
             self.aug_grid_search_dict = {
                 "flip": [dict(p=float(i/10)) for i in range(2,11)],
                 "grayscale": [dict(p=float(i/10)) for i in range(2,11)],
@@ -365,9 +369,11 @@ class RadSacAgent(object):
                 "cutout": [dict(min_cut=i*10, max_cut=i*10 + 10) for i in range(1, 11)],
                 "cutout_color": [dict(min_cut=10*i, max_cut=10*i + 10) for i in range(1, 11)],
                 "color_jitter": [dict(bright=i/10, contrast=i/10, satur=i/10, hue=i/10) for i in range(2, 11)],
-                "center_crop": [dict(out=self.image_size-4*i) for i in range(2, 11)],
-                "translate_cc": [dict(crop_sz=self.image_size-4*i) for i in range(2, 11)],
+                "center_crop": [dict(out=self.image_size-2*i) for i in range(2, 11)],
+                "translate_cc": [dict(crop_sz=self.image_size-2*i) for i in range(2, 11)],
                 "kornia_jitter": [dict(bright=i/10, contrast=i/10, satur=i/10, hue=i/10) for i in range(2, 11)],
+                "in_frame_translate": [dict(crop_sz=self.image_size+2*i) for i in range(2, 11)],
+                "crop_translate": [dict(out=self.image_size-2*i) for i in range(2, 11)],
             }
 
         for aug_name in self.data_augs.split("-"):
@@ -594,17 +600,6 @@ class RadSacAgent(object):
     
 
     def run_not_PBA(self, replay_buffer, L, step):
-        if self.pba_mode == "prune" and step >= 999 and step % self.prune_interval == 0 and len(self.augs_funcs) > 1:
-            lowest_score = float('inf')
-            lowest_key = None
-            for key, score in self.aug_score_dict.items():
-                if score < lowest_score:
-                    lowest_score = score
-                    lowest_key = key
-                
-            del self.aug_score_dict[lowest_key]
-            del self.augs_funcs[lowest_key]
-            
         if step > 999:
             is_first = True
             idxs = None
@@ -630,17 +625,27 @@ class RadSacAgent(object):
 
             self.optimize_critic(loss=best_score, L=L, step=step)
 
-            if self.pba_mode in ["unused", "search", "warm_up", "tune"]:
+            if self.pba_mode in ["unused", "search", "warm_up", "tune", "prune"]:
                 del_key = None
                 for key, val in self.aug_score_dict.items():
                     if key == best_func_key:
-                        self.aug_score_dict[key] = 0
-                    else:
-                        if val + 1 > self.prune_interval:
-                            if del_key is None:
-                                del_key = key
-                        else:
+                        if self.pba_mode == "prune":
                             self.aug_score_dict[key] += 1
+                        else:
+                            self.aug_score_dict[key] = 0
+                    else:
+                        if self.pba_mode == "prune" and step % self.prune_interval == 0 and len(self.augs_funcs) > 1 and step > 1000:
+                            worst_score = float('inf')
+                            for key, score in self.aug_score_dict.items():
+                                if score < worst_score:
+                                    worst_score = score
+                                    del_key = key
+                        elif self.pba_mode in ["unused", "search", "warm_up", "tune"]:
+                            if val + 1 > self.prune_interval:
+                                if del_key is None:
+                                    del_key = key
+                            else:
+                                self.aug_score_dict[key] += 1
 
                 if del_key is not None:
                     del self.aug_score_dict[del_key]
@@ -682,20 +687,28 @@ class RadSacAgent(object):
 
                             self.aug_score_dict[new_key] = int(sum/count)
                             aug_params.remove(sampled_param)
-                    elif self.pba_mode == "tune":
+                    elif self.pba_mode in ["tune", "prune"]:
                         og_key_of_del = del_key.split('/')[0]
                         aug_params = self.aug_grid_search_dict.get(og_key_of_del, False)
+
+                        if not aug_params and self.aug_grid_search_dict:
+                            aug_params = random.sample(list(self.aug_grid_search_dict.keys()))[0]
 
                         if aug_params:
                             param_selected = aug_params[0]
                             aug_params.remove(param_selected)
                             new_key = og_key_of_del + '/' + str(param_selected)
                             self.augs_funcs[new_key] = dict(func=self.aug_to_func[og_key_of_del]['func'], params=param_selected)
-                            self.aug_score_dict[new_key] = 0
+
+                            if self.pba_mode == "tune":
+                                self.aug_score_dict[new_key] = 0
+                            else:
+                                for key, _ in self.aug_grid_search_dict.items():
+                                    self.aug_grid_search_dict[key] = 0
             else:
                 self.aug_score_dict[best_func_key] += 1
         else:
-            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad({'no_aug':rad.no_aug, 'params': dict()})
+            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(dict(no_aug=dict(func=rad.no_aug, params=dict())))
 
         return best_obs, action, reward, best_next_obs, not_done
 
