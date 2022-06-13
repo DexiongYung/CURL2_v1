@@ -42,6 +42,12 @@ def center_random_crop(imgs, out=92):
     return center_translates(image=cropped, size=h)
 
 
+def center_crop_DrAC(imgs, out=116):
+    _, _, h, _ = imgs.shape
+    imgs = center_translates(image=imgs, size=out)
+    return random_crop(imgs=imgs, out=h)
+
+
 def grayscale(imgs):
     # imgs: b x c x h x w
     device = imgs.device

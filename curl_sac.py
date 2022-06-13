@@ -329,6 +329,7 @@ class RadSacAgent(object):
                 "kornia_jitter": dict(func=rad.kornia_color_jitter, params=dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.1)),
                 "in_frame_translate": dict(func=rad.in_frame_translate, params=dict(size=self.image_size + 2)),
                 "crop_translate": dict(func=rad.crop_translate, params=dict(out=self.image_size - 2)),
+                "center_crop_drac": dict(function=rad.center_crop_DrAC, params=dict(out=110)),
                 "no_aug": dict(func=rad.no_aug, params=dict()),
             }
         else:
@@ -348,6 +349,7 @@ class RadSacAgent(object):
                 "in_frame_translate": dict(func=rad.in_frame_translate, params=dict(size=128)),
                 "crop_translate": dict(func=rad.crop_translate, params=dict(out=100)),
                 "no_aug": dict(func=rad.no_aug, params=dict()),
+                "center_crop_drac": dict(function=rad.center_crop_DrAC, params=dict(out=116))
             }
 
         if self.pba_mode == "search":
@@ -374,6 +376,7 @@ class RadSacAgent(object):
                 "kornia_jitter": [dict(bright=i/10, contrast=i/10, satur=i/10, hue=i/10) for i in range(2, 11)],
                 "in_frame_translate": [dict(size=self.image_size+2*i) for i in range(2, 11)],
                 "crop_translate": [dict(out=self.image_size-2*i) for i in range(2, 11)],
+                "center_crop_drac": [dict(out=self.image_size+2*i) for i in range(2, 11)]
             }
 
         for aug_name in self.data_augs.split("-"):
