@@ -378,11 +378,15 @@ class RadSacAgent(object):
                 "crop_translate": [dict(out=self.image_size-2*i) for i in range(2, 11)],
                 "center_crop_drac": [dict(out=self.image_size+2*i) for i in range(2, 11)]
             }
+        else:
+            aug_grid_search_dict = None
 
         for aug_name in self.data_augs.split("-"):
             assert aug_name in self.aug_to_func, "invalid data aug string"
             self.augs_funcs[aug_name] = self.aug_to_func[aug_name]
-            self.aug_grid_search_dict[aug_name] = aug_grid_search_dict[aug_name]
+
+            if aug_grid_search_dict:
+                self.aug_grid_search_dict[aug_name] = aug_grid_search_dict[aug_name]
         
         print(f'Aug set is: {self.data_augs}')
 
@@ -576,23 +580,18 @@ class RadSacAgent(object):
             L.log("train_alpha/value", self.alpha, step)
         alpha_loss.backward()
         self.log_alpha_optimizer.step()
-
-    def update_cpc(self, obs_anchor, obs_pos, cpc_kwargs, L, step):
-
-        # time flips
-        """
-        time_pos = cpc_kwargs["time_pos"]
-        time_anchor= cpc_kwargs["time_anchor"]
-        obs_anchor = torch.cat((obs_anchor, time_anchor), 0)
-        obs_pos = torch.cat((obs_anchor, time_pos), 0)
-        """
-        z_a = self.CURL.encode(obs_anchor)
-        z_pos = self.CURL.encode(obs_pos, ema=True)
+    
+    
+    def calculate_info_NCE_loss(self, anchor, pos):
+        z_a = self.CURL.encode(anchor)
+        z_pos = self.CURL.encode(pos, ema=True)
 
         logits = self.CURL.compute_logits(z_a, z_pos)
         labels = torch.arange(logits.shape[0]).long().to(self.device)
-        loss = self.cross_entropy_loss(logits, labels)
+        return self.cross_entropy_loss(logits, labels)
+    
 
+    def backprop_on_NCE_loss(self, loss, L, step):
         self.encoder_optimizer.zero_grad()
         self.cpc_optimizer.zero_grad()
         loss.backward()
@@ -601,6 +600,19 @@ class RadSacAgent(object):
         self.cpc_optimizer.step()
         if step % self.log_interval == 0:
             L.log("train/curl_loss", loss, step)
+
+
+    def update_cpc(self, obs_anchor, obs_pos, L, step):
+
+        # time flips
+        """
+        time_pos = cpc_kwargs["time_pos"]
+        time_anchor= cpc_kwargs["time_anchor"]
+        obs_anchor = torch.cat((obs_anchor, time_anchor), 0)
+        obs_pos = torch.cat((obs_anchor, time_pos), 0)
+        """
+        loss = self.calculate_info_NCE_loss(anchor=obs_anchor, pos=obs_pos)
+        self.backprop_on_NCE_loss(loss=loss, L=L, step=step)
     
 
     def run_not_PBA(self, replay_buffer, L, step):
@@ -716,10 +728,39 @@ class RadSacAgent(object):
             obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(dict(no_aug=dict(func=rad.no_aug, params=dict())))
 
         return best_obs, action, reward, best_next_obs, not_done
+    
+
+    def info_min_aug_select(self, replay_buffer):
+        best_score = float('-inf')
+        best_obs = None
+        best_key = None
+        best_next_obs = None
+        anchor, _, _, _, _, idxs = replay_buffer.sample_rad(dict(no_aug=self.augs_funcs['no_aug']), return_idxes=True)
+        for key, func in self.augs_funcs.items():
+            if key == "no_aug":
+                continue
+
+            func_dict = {key: func}
+            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(func_dict, idxs=idxs)
+                    
+            score = self.calculate_info_NCE_loss(anchor=anchor, pos=obs)
+                    
+            if score > best_score:
+                best_score = score
+                best_key = key
+                best_obs = obs
+                best_next_obs = next_obs
+        
+        self.aug_score_dict[best_key] += 1
+        return anchor, best_obs, action, reward, best_next_obs, not_done, best_score
 
 
     def update(self, replay_buffer, L, step):
-        if self.mode:
+        if self.mode == "infomin":
+           anchor, obs, action, reward, next_obs, not_done, info_loss = self.info_min_aug_select(replay_buffer=replay_buffer)
+           self.update_critic(obs, action, reward, next_obs, not_done, L, step)
+           self.update_cpc(obs_anchor=anchor, obs_pos=obs, L=L, step=step)
+        elif self.mode:
             obs, action, reward, next_obs, not_done = self.run_not_PBA(replay_buffer=replay_buffer, L=L, step=step)
         else:
             if self.encoder_type == "pixel":
@@ -748,9 +789,6 @@ class RadSacAgent(object):
                 self.critic.encoder, self.critic_target.encoder, self.encoder_tau
             )
 
-        # if step % self.cpc_update_freq == 0 and self.encoder_type == 'pixel':
-        #    obs_anchor, obs_pos = cpc_kwargs["obs_anchor"], cpc_kwargs["obs_pos"]
-        #    self.update_cpc(obs_anchor, obs_pos,cpc_kwargs, L, step)
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
