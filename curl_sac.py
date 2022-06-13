@@ -731,10 +731,8 @@ class RadSacAgent(object):
     
 
     def info_min_aug_select(self, replay_buffer):
-        best_score = float('-inf')
-        best_obs = None
-        best_key = None
-        best_next_obs = None
+        loss_dict = dict()
+        obs_dict = dict()
         anchor, _, _, _, _, idxs = replay_buffer.sample_rad(dict(no_aug=self.augs_funcs['no_aug']), return_idxes=True)
         for key, func in self.augs_funcs.items():
             if key == "no_aug":
@@ -743,21 +741,20 @@ class RadSacAgent(object):
             func_dict = {key: func}
             obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(func_dict, idxs=idxs)
                     
-            score = self.calculate_info_NCE_loss(anchor=anchor, pos=obs)
-                    
-            if score > best_score:
-                best_score = score
-                best_key = key
-                best_obs = obs
-                best_next_obs = next_obs
+            loss_dict[key] = self.calculate_info_NCE_loss(anchor=anchor, pos=obs).detach().item()
+            obs_dict[key] = (obs, next_obs)
         
+        loss_sorted_list = sorted(loss_dict.items(), key=lambda x: x[1])
+        best_key = loss_sorted_list[int(len(loss_sorted_list)/2)][0]
+        best_obs, best_next_obs = obs_dict[best_key]
+
         self.aug_score_dict[best_key] += 1
-        return anchor, best_obs, action, reward, best_next_obs, not_done, best_score
+        return anchor, best_obs, action, reward, best_next_obs, not_done
 
 
     def update(self, replay_buffer, L, step):
         if self.mode == "infomin":
-           anchor, obs, action, reward, next_obs, not_done, info_loss = self.info_min_aug_select(replay_buffer=replay_buffer)
+           anchor, obs, action, reward, next_obs, not_done = self.info_min_aug_select(replay_buffer=replay_buffer)
            self.update_critic(obs, action, reward, next_obs, not_done, L, step)
            self.update_cpc(obs_anchor=anchor, obs_pos=obs, L=L, step=step)
         elif self.mode:
