@@ -353,7 +353,7 @@ class RadSacAgent(object):
             }
 
         if self.mode == "search":
-            self.aug_grid_search_dict = {
+            aug_grid_search_dict = {
                 "cutout": [dict(min_cut=0, max_cut=20), dict(min_cut=20, max_cut=40), dict(min_cut=30, max_cut=50), dict(min_cut=40, max_cut=60)],
                 "cutout_color": [dict(min_cut=0, max_cut=20), dict(min_cut=20, max_cut=40), dict(min_cut=30, max_cut=50), dict(min_cut=40, max_cut=60)],
                 "color_jitter": [dict(bright=0.2, contrast=0.2, satur=0.2, hue=0.3), dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.2),
@@ -364,7 +364,7 @@ class RadSacAgent(object):
                     dict(bright=0.5, contrast=0.5, satur=0.5, hue=0.6), dict(bright=0.6, contrast=0.6, satur=0.6, hue=0.7)],
             }
         elif self.mode in ["warm_up", "tune", "prune"]:
-            self.aug_grid_search_dict = {
+            aug_grid_search_dict = {
                 "flip": [dict(p=float(i/10)) for i in range(2,11)],
                 "grayscale": [dict(p=float(i/10)) for i in range(2,11)],
                 "rotate": [dict(p=float(i/10)) for i in range(2,11)],
@@ -382,6 +382,7 @@ class RadSacAgent(object):
         for aug_name in self.data_augs.split("-"):
             assert aug_name in self.aug_to_func, "invalid data aug string"
             self.augs_funcs[aug_name] = self.aug_to_func[aug_name]
+            self.aug_grid_search_dict[aug_name] = aug_grid_search_dict[aug_name]
         
         print(f'Aug set is: {self.data_augs}')
 
