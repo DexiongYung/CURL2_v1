@@ -175,7 +175,7 @@ def make_agent(obs_shape, action_shape, args, device):
             detach_encoder=args.detach_encoder,
             latent_dim=args.latent_dim,
             data_augs=args.data_augs,
-            pba_mode=args.pba_mode,
+            mode=args.pba_mode,
             prune_interval=args.prune_interval
         )
     else:

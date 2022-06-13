@@ -295,7 +295,7 @@ class RadSacAgent(object):
         detach_encoder=False,
         latent_dim=128,
         data_augs="",
-        pba_mode=None,
+        mode=None,
         prune_interval=None
     ):
         self.device = device
@@ -311,11 +311,11 @@ class RadSacAgent(object):
         self.detach_encoder = detach_encoder
         self.encoder_type = encoder_type
         self.data_augs = data_augs
-        self.pba_mode = pba_mode
+        self.mode = mode
 
         self.augs_funcs = {}
 
-        if self.pba_mode in ["warm_up", "tune", "prune"]:
+        if self.mode in ["warm_up", "tune", "prune"]:
             self.aug_to_func = {
                 "grayscale": dict(func=rad.random_grayscale, params=dict(p=0.1)),
                 "cutout": dict(func=rad.random_cutout, params=dict(min_cut=0, max_cut=10)),
@@ -349,10 +349,10 @@ class RadSacAgent(object):
                 "in_frame_translate": dict(func=rad.in_frame_translate, params=dict(size=128)),
                 "crop_translate": dict(func=rad.crop_translate, params=dict(out=100)),
                 "no_aug": dict(func=rad.no_aug, params=dict()),
-                "center_crop_drac": dict(function=rad.center_crop_DrAC, params=dict(out=116))
+                "center_crop_drac": dict(func=rad.center_crop_DrAC, params=dict(out=116))
             }
 
-        if self.pba_mode == "search":
+        if self.mode == "search":
             self.aug_grid_search_dict = {
                 "cutout": [dict(min_cut=0, max_cut=20), dict(min_cut=20, max_cut=40), dict(min_cut=30, max_cut=50), dict(min_cut=40, max_cut=60)],
                 "cutout_color": [dict(min_cut=0, max_cut=20), dict(min_cut=20, max_cut=40), dict(min_cut=30, max_cut=50), dict(min_cut=40, max_cut=60)],
@@ -363,7 +363,7 @@ class RadSacAgent(object):
                 "kornia_jitter": [dict(bright=0.2, contrast=0.2, satur=0.2, hue=0.3), dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.2),
                     dict(bright=0.5, contrast=0.5, satur=0.5, hue=0.6), dict(bright=0.6, contrast=0.6, satur=0.6, hue=0.7)],
             }
-        elif self.pba_mode in ["warm_up", "tune", "prune"]:
+        elif self.mode in ["warm_up", "tune", "prune"]:
             self.aug_grid_search_dict = {
                 "flip": [dict(p=float(i/10)) for i in range(2,11)],
                 "grayscale": [dict(p=float(i/10)) for i in range(2,11)],
@@ -385,9 +385,9 @@ class RadSacAgent(object):
         
         print(f'Aug set is: {self.data_augs}')
 
-        if self.pba_mode:
+        if self.mode:
             self.prune_interval = prune_interval
-            print(f'Prune PBA mode on! Setting: {self.pba_mode}. With prune step: {prune_interval}')
+            print(f'Prune PBA mode on! Setting: {self.mode}. With prune step: {prune_interval}')
             self.aug_score_dict = dict()
             for key, _ in self.augs_funcs.items():
                 self.aug_score_dict[key] = 0
@@ -628,22 +628,22 @@ class RadSacAgent(object):
 
             self.optimize_critic(loss=best_score, L=L, step=step)
 
-            if self.pba_mode in ["unused", "search", "warm_up", "tune", "prune"]:
+            if self.mode in ["unused", "search", "warm_up", "tune", "prune"]:
                 del_key = None
                 for key, val in self.aug_score_dict.items():
                     if key == best_func_key:
-                        if self.pba_mode == "prune":
+                        if self.mode == "prune":
                             self.aug_score_dict[key] += 1
                         else:
                             self.aug_score_dict[key] = 0
                     else:
-                        if self.pba_mode == "prune" and step % self.prune_interval == 0 and len(self.augs_funcs) > 1 and step > 1000:
+                        if self.mode == "prune" and step % self.prune_interval == 0 and len(self.augs_funcs) > 1 and step > 1000:
                             worst_score = float('inf')
                             for key, score in self.aug_score_dict.items():
                                 if score < worst_score:
                                     worst_score = score
                                     del_key = key
-                        elif self.pba_mode in ["unused", "search", "warm_up", "tune"]:
+                        elif self.mode in ["unused", "search", "warm_up", "tune"]:
                             if val + 1 > self.prune_interval:
                                 if del_key is None:
                                     del_key = key
@@ -654,7 +654,7 @@ class RadSacAgent(object):
                     del self.aug_score_dict[del_key]
                     del self.augs_funcs[del_key]
                 
-                    if self.pba_mode in ["search", "warm_up"]:
+                    if self.mode in ["search", "warm_up"]:
                         aug_keys = list()
 
                         for key in list(self.augs_funcs.keys()):
@@ -672,9 +672,9 @@ class RadSacAgent(object):
                             aug_params = self.aug_grid_search_dict.get(sample_key, False)
 
                         if aug_params:
-                            if self.pba_mode == "search":
+                            if self.mode == "search":
                                 sampled_param = random.sample(aug_params, 1)[0]
-                            elif self.pba_mode == "warm_up":
+                            elif self.mode == "warm_up":
                                 sampled_param = aug_params[0]
 
                             new_key = sample_key + '/' + str(sampled_param)
@@ -690,7 +690,7 @@ class RadSacAgent(object):
 
                             self.aug_score_dict[new_key] = int(sum/count)
                             aug_params.remove(sampled_param)
-                    elif self.pba_mode in ["tune", "prune"]:
+                    elif self.mode in ["tune", "prune"]:
                         og_key_of_del = del_key.split('/')[0]
                         aug_params = self.aug_grid_search_dict.get(og_key_of_del, False)
 
@@ -704,7 +704,7 @@ class RadSacAgent(object):
                             new_key = og_key_of_del + '/' + str(param_selected)
                             self.augs_funcs[new_key] = dict(func=self.aug_to_func[og_key_of_del]['func'], params=param_selected)
 
-                            if self.pba_mode == "tune":
+                            if self.mode == "tune":
                                 self.aug_score_dict[new_key] = 0
                             else:
                                 for key, _ in self.aug_grid_search_dict.items():
@@ -718,7 +718,7 @@ class RadSacAgent(object):
 
 
     def update(self, replay_buffer, L, step):
-        if self.pba_mode:
+        if self.mode:
             obs, action, reward, next_obs, not_done = self.run_not_PBA(replay_buffer=replay_buffer, L=L, step=step)
         else:
             if self.encoder_type == "pixel":
