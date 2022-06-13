@@ -329,7 +329,7 @@ class RadSacAgent(object):
                 "kornia_jitter": dict(func=rad.kornia_color_jitter, params=dict(bright=0.1, contrast=0.1, satur=0.1, hue=0.1)),
                 "in_frame_translate": dict(func=rad.in_frame_translate, params=dict(size=self.image_size + 2)),
                 "crop_translate": dict(func=rad.crop_translate, params=dict(out=self.image_size - 2)),
-                "center_crop_drac": dict(function=rad.center_crop_DrAC, params=dict(out=110)),
+                "center_crop_drac": dict(func=rad.center_crop_DrAC, params=dict(out=110)),
                 "no_aug": dict(func=rad.no_aug, params=dict()),
             }
         else:
