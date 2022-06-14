@@ -733,7 +733,7 @@ class RadSacAgent(object):
     def info_min_aug_select(self, replay_buffer):
         loss_dict = dict()
         obs_dict = dict()
-        anchor, _, _, _, _, idxs = replay_buffer.sample_rad(dict(no_aug=self.augs_funcs['no_aug']), return_idxes=True)
+        anchor, _, _, _, _, idxs = replay_buffer.sample_rad(dict(no_aug=self.aug_to_func['no_aug']), return_idxes=True)
         for key, func in self.augs_funcs.items():
             if key == "no_aug":
                 continue
