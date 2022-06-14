@@ -24,6 +24,12 @@ def random_crop(imgs, out=84):
     return cropped
 
 
+def center_crop_DrAC(imgs, out=116):
+    _, _, h, _ = imgs.shape
+    imgs = center_translates(image=imgs, size=out)
+    return random_crop(imgs=imgs, out=h)
+
+
 def center_random_crop(imgs, out=84):
     """
     args:
