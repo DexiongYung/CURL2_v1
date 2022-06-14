@@ -498,7 +498,7 @@ class RadSacAgent(object):
         alpha_loss.backward()
         self.log_alpha_optimizer.step()
 
-    def update_cpc(self, obs_anchor, obs_pos, cpc_kwargs, L, step):
+    def update_cpc(self, obs_anchor, obs_pos, L, step):
 
         # time flips
         """
@@ -552,7 +552,7 @@ class RadSacAgent(object):
 
         # if step % self.cpc_update_freq == 0 and self.encoder_type == 'pixel':
         #    obs_anchor, obs_pos = cpc_kwargs["obs_anchor"], cpc_kwargs["obs_pos"]
-        #    self.update_cpc(obs_anchor, obs_pos,cpc_kwargs, L, step)
+        #    self.update_cpc(obs_anchor, obs_pos, L, step)
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
