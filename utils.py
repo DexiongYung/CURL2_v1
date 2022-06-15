@@ -146,15 +146,16 @@ class ReplayBuffer(Dataset):
 
         return obses, actions, rewards, next_obses, not_dones, cpc_kwargs
 
-    def sample_rad(self, aug_funcs):
+    def sample_rad(self, aug_funcs, idxs=None, return_idxs=False):
 
         # augs specified as flags
         # curl_sac organizes flags into aug funcs
         # passes aug funcs into sampler
 
-        idxs = np.random.randint(
-            0, self.capacity if self.full else self.idx, size=self.batch_size
-        )
+        if idxs is None:
+            idxs = np.random.randint(
+                0, self.capacity if self.full else self.idx, size=self.batch_size
+            )
 
         obses = self.obses[idxs]
         next_obses = self.next_obses[idxs]
@@ -196,7 +197,10 @@ class ReplayBuffer(Dataset):
                 obses = func(obses, **params)
                 next_obses = func(next_obses, **params)
 
-        return obses, actions, rewards, next_obses, not_dones
+        if return_idxs:
+            return obses, actions, rewards, next_obses, not_dones, idxs
+        else:
+            return obses, actions, rewards, next_obses, not_dones
 
     def save(self, save_dir):
         if self.idx == self.last_save:

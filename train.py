@@ -353,6 +353,9 @@ def main():
             if step % args.log_interval == 0:
                 L.log("train/episode", episode, step)
 
+                if "ucb" in agent.mode:
+                    print(agent.ucb_dict)
+
         # sample action for data collection
         if step < args.init_steps:
             action = env.action_space.sample()
@@ -364,7 +367,7 @@ def main():
         if step >= args.init_steps:
             agent.update(replay_buffer, L, step)
 
-            if "ucb" in agent.mode:
+            if "ucb" in agent.mode and agent.last_aug:
                 ep_reward = run_single_eval(
                     env=eval_env,
                     agent=agent,

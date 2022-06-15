@@ -91,7 +91,7 @@ class MetersGroup(object):
         data = self._prime_meters()
         data['step'] = step
         self._dump_to_file(data)
-        self._dump_to_console(data, prefix)
+        # self._dump_to_console(data, prefix)
         self._meters.clear()
 
 

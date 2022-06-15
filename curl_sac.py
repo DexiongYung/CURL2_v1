@@ -615,22 +615,10 @@ class RadSacAgent(object):
             L.log("train/curl_loss", loss, step)
 
     def update(self, replay_buffer, L, step):
-        aug_obs = None
-        if self.mode:
-            if "drac" in self.mode:
-                obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(None)
-
-            if "ucb" in self.mode:
-                self.ucb_select_aug()
-                aug_obs, _, _, _, _ = replay_buffer.sample_rad(
-                    {self.last_aug: self.augs_funcs[self.last_aug]}
-                )
-            else:
-                aug_obs, _, _, _, _ = replay_buffer.sample_rad(self.augs_funcs)
-        else:
-            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
-                self.augs_funcs
-            )
+        self.last_aug = None
+        obs, action, reward, next_obs, not_done, idxs = replay_buffer.sample_rad(
+            self.augs_funcs, return_idxs=True
+        )
 
         if step % self.log_interval == 0:
             L.log("train/batch_reward", reward.mean(), step)
@@ -638,6 +626,17 @@ class RadSacAgent(object):
         self.update_critic(obs, action, reward, next_obs, not_done, L, step)
 
         if step % self.actor_update_freq == 0:
+            aug_obs = None
+            if "drac" in self.mode:
+                if "ucb" in self.mode:
+                    self.ucb_select_aug()
+                    aug_obs, _, _, _, _ = replay_buffer.sample_rad(
+                        {self.last_aug: self.augs_funcs[self.last_aug]}, idxs=idxs
+                    )
+                else:
+                    aug_obs, _, _, _, _ = replay_buffer.sample_rad(
+                        self.augs_funcs, idxs=idxs
+                    )
             self.update_actor_and_alpha(obs=obs, L=L, step=step, aug_obs=aug_obs)
 
         if step % self.critic_target_update_freq == 0:
