@@ -353,8 +353,15 @@ def main():
             if step % args.log_interval == 0:
                 L.log("train/episode", episode, step)
 
-                if "ucb" in agent.mode:
-                    print(agent.ucb_dict)
+                if agent.mode and "ucb" in agent.mode:
+                    print_dict = dict()
+                    for key, values in agent.ucb_dict.items():
+                        print_dict[key] = dict(
+                            count=values["count"],
+                            mean_reward=np.mean(values["ep_reward_list"]),
+                        )
+
+                    print(print_dict)
 
         # sample action for data collection
         if step < args.init_steps:
@@ -367,7 +374,7 @@ def main():
         if step >= args.init_steps:
             agent.update(replay_buffer, L, step)
 
-            if "ucb" in agent.mode and agent.last_aug:
+            if agent.mode and "ucb" in agent.mode and agent.last_aug:
                 ep_reward = run_single_eval(
                     env=eval_env,
                     agent=agent,

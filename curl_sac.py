@@ -627,7 +627,7 @@ class RadSacAgent(object):
 
         if step % self.actor_update_freq == 0:
             aug_obs = None
-            if "drac" in self.mode:
+            if self.mode and "drac" in self.mode:
                 if "ucb" in self.mode:
                     self.ucb_select_aug()
                     aug_obs, _, _, _, _ = replay_buffer.sample_rad(
