@@ -311,32 +311,43 @@ class RadSacAgent(object):
         self.encoder_type = encoder_type
         self.data_augs = data_augs
 
-        self.augs_funcs = {}
-
         aug_to_func = {
             "crop": dict(func=rad.random_crop, params=dict(out=84)),
             "grayscale": dict(func=rad.random_grayscale, params=dict(p=0.3)),
             "cutout": dict(func=rad.random_cutout, params=dict(min_cut=10, max_cut=30)),
-            "cutout_color": dict(func=rad.random_cutout_color, params=dict(min_cut=10, max_cut=30)),
+            "cutout_color": dict(
+                func=rad.random_cutout_color, params=dict(min_cut=10, max_cut=30)
+            ),
             "flip": dict(func=rad.random_flip, params=dict(p=0.2)),
             "rotate": dict(func=rad.random_rotation, params=dict(p=0.3)),
             "rand_conv": dict(func=rad.random_convolution, params=dict()),
-            "color_jitter": dict(func=rad.random_color_jitter, params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5)),
+            "color_jitter": dict(
+                func=rad.random_color_jitter,
+                params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5),
+            ),
             "translate": dict(func=rad.random_translate, params=dict()),
             "center_crop": dict(func=rad.center_random_crop, params=dict(out=84)),
-            "translate_cc": dict(func=rad.translate_center_crop, params=dict(crop_sz=100)),
-            "kornia_jitter": dict(func=rad.kornia_color_jitter, params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5)),
-            "in_frame_translate": dict(func=rad.in_frame_translate, params=dict(size=94)),
+            "translate_cc": dict(
+                func=rad.translate_center_crop, params=dict(crop_sz=100)
+            ),
+            "kornia_jitter": dict(
+                func=rad.kornia_color_jitter,
+                params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5),
+            ),
+            "in_frame_translate": dict(
+                func=rad.in_frame_translate, params=dict(size=94)
+            ),
             "crop_translate": dict(func=rad.crop_translate, params=dict(size=100)),
             "center_crop_drac": dict(func=rad.center_crop_DrAC, params=dict(out=116)),
             "no_aug": dict(func=rad.no_aug, params=dict()),
         }
 
+        self.augs_funcs = {}
         for aug_name in self.data_augs.split("-"):
             assert aug_name in aug_to_func, "invalid data aug string"
             self.augs_funcs[aug_name] = aug_to_func[aug_name]
-        
-        print(f'Aug set: {self.data_augs}')
+
+        print(f"Aug set: {self.augs_funcs}")
 
         self.actor = Actor(
             obs_shape,
@@ -489,7 +500,7 @@ class RadSacAgent(object):
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         self.actor_optimizer.step()
-        
+
         # TODO!!!
         # self.actor.log(L, step)
 
