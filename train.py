@@ -361,7 +361,7 @@ def main():
         if step >= args.init_steps:
             agent.update(replay_buffer, L, step)
 
-            if 'ucb' in agent.mode:
+            if "ucb" in agent.mode:
                 ep_reward = run_single_eval(
                     env=eval_env,
                     agent=agent,

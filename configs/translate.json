@@ -24,7 +24,7 @@
     "eval_freq": 5000,
     "frame_stack": 3,
     "hidden_dim": 1024,
-    "id": "paper_hyperparam",
+    "id": "translate",
     "image_size": 108,
     "init_steps": 1000,
     "init_temperature": 0.1,

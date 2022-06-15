@@ -11,7 +11,7 @@
             "program": "${workspaceFolder}/train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--config_file", "./configs/paper_hyperparam.json"]
+            "args": ["--config_file", "./configs/translate.json"]
         },
         {
             "name": "Train Vanilla",
