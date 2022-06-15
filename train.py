@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 import torch
 import argparse
@@ -77,7 +78,7 @@ def parse_args():
     parser.add_argument("--drac_alpha", default=0.1, type=float)
     # UCB args
     parser.add_argument("--ucb_explore_coef", default=500, type=int)
-    parser.add_argument("--ucb_max_len", default=10, type=10)
+    parser.add_argument("--ucb_max_len", default=10, type=int)
 
     args = parser.parse_args()
     return args
@@ -190,7 +191,7 @@ def make_agent(obs_shape, action_shape, args, device):
             detach_encoder=args.detach_encoder,
             latent_dim=args.latent_dim,
             data_augs=args.data_augs,
-            ucb_explore_coef=args.ucb_explore_ceof,
+            ucb_explore_coef=args.ucb_explore_coef,
             ucb_max_len=args.ucb_max_len,
             mode=args.mode,
             drac_alpha=args.drac_alpha,
@@ -275,6 +276,8 @@ def main():
     video = VideoRecorder(video_dir if args.save_video else None)
 
     os.makedirs(work_dir, exist_ok=True)
+    stdout_file = open(os.path.join(work_dir, "stdout.txt"), "w", buffering=1)
+    sys.stdout = stdout_file
     with open(os.path.join(work_dir, "args.json"), "w") as f:
         json.dump(vars(args), f, sort_keys=True, indent=4)
 
@@ -380,6 +383,9 @@ def main():
 
         obs = next_obs
         episode_step += 1
+
+    sys.stdout.close()
+    stdout_file.close()
 
 
 if __name__ == "__main__":

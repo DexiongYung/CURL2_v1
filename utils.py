@@ -1,13 +1,13 @@
+import sys
+import builtins
 import torch
 import numpy as np
-import torch.nn as nn
 import gym
 import os
 from collections import deque
 import random
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import time
-from skimage.util.shape import view_as_windows
 
 
 class eval_mode(object):
@@ -160,8 +160,8 @@ class ReplayBuffer(Dataset):
         next_obses = self.next_obses[idxs]
         if aug_funcs:
             for aug, func_dict in aug_funcs.items():
-                func = func_dict['func']
-                params = func_dict['params']
+                func = func_dict["func"]
+                params = func_dict["params"]
                 # apply crop and cutout first
                 if "crop" in aug or "cutout" in aug:
                     obses = func(obses, **params)
@@ -186,13 +186,13 @@ class ReplayBuffer(Dataset):
         # augmentations go here
         if aug_funcs:
             for aug, func_dict in aug_funcs.items():
-                func = func_dict['func']
-                params = func_dict['params']
+                func = func_dict["func"]
+                params = func_dict["params"]
                 # skip crop and cutout augs
 
                 if "crop" in aug or "cutout" in aug or "translate" in aug:
                     continue
-                
+
                 obses = func(obses, **params)
                 next_obses = func(next_obses, **params)
 

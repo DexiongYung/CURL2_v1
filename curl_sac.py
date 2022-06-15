@@ -313,6 +313,7 @@ class RadSacAgent(object):
         self.detach_encoder = detach_encoder
         self.encoder_type = encoder_type
         self.data_augs = data_augs
+        self.mode = mode
 
         aug_to_func = {
             "crop": dict(func=rad.random_crop, params=dict(out=84)),
@@ -352,22 +353,24 @@ class RadSacAgent(object):
 
         print(f"Aug set: {self.augs_funcs}")
 
-        print(f"SAC Agent mode is: {mode}")
-        if mode:
-            if "drac" in mode:
+        print(f"SAC Agent mode is: {self.mode}")
+        if self.mode:
+            if "drac" in self.mode:
                 self.drac_alpha = drac_alpha
                 print(f"DrAC on and alpha is: {self.drac_alpha}")
             else:
-                raise ValueError(f"Mode is set to: {mode}, but this is not defined")
+                raise ValueError(
+                    f"Mode is set to: {self.mode}, but this is not defined"
+                )
 
-            if "ucb" in mode:
+            if "ucb" in self.mode:
                 self.ucb_explore_coef = ucb_explore_coef
                 self.ucb_max_len = ucb_max_len
                 self.ucb_step = 0
                 self.last_aug = None
                 self.ucb_dict = dict()
 
-                for key, _ in self.augs_funcs:
+                for key, _ in self.augs_funcs.items():
                     self.ucb_dict[key] = dict(
                         count=1, ep_reward_list=deque([0], maxlen=self.ucb_max_len)
                     )
@@ -488,7 +491,7 @@ class RadSacAgent(object):
         best_key = None
         best_score = float("-inf")
 
-        for key, value in self.ucb_dict:
+        for key, value in self.ucb_dict.items():
             count = value["count"]
             reward_list = value["ep_reward_list"]
             curr_score = np.mean(reward_list) + self.ucb_explore_coef * np.sqrt(
@@ -554,7 +557,7 @@ class RadSacAgent(object):
             aug_actor_Q1, aug_actor_Q2 = self.critic(
                 aug_obs, aug_pi, detach_encoder=True
             )
-            V = (torch.min(actor_Q1, actor_Q2) - self.alpha.detach() * log_pi).detach
+            V = (torch.min(actor_Q1, actor_Q2) - self.alpha.detach() * log_pi).detach()
             aug_V = (
                 torch.min(aug_actor_Q1, aug_actor_Q2) - self.alpha.detach() * aug_log_pi
             )
