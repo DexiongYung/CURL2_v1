@@ -313,7 +313,6 @@ class RadSacAgent(object):
         self.detach_encoder = detach_encoder
         self.encoder_type = encoder_type
         self.data_augs = data_augs
-        self.ucb_on = "ucb" in mode
 
         aug_to_func = {
             "crop": dict(func=rad.random_crop, params=dict(out=84)),
@@ -531,9 +530,9 @@ class RadSacAgent(object):
         # TODD!!!
         # self.critic.log(L, step)
 
-    def update_actor_and_alpha(self, obs, L, step):
+    def update_actor_and_alpha(self, obs, L, step, aug_obs):
         # detach encoder, so we don't update it with the actor loss
-        _, pi, log_pi, log_std = self.actor(obs, detach_encoder=True)
+        mu, pi, log_pi, log_std = self.actor(obs, detach_encoder=True)
         actor_Q1, actor_Q2 = self.critic(obs, pi, detach_encoder=True)
 
         actor_Q = torch.min(actor_Q1, actor_Q2)
@@ -547,6 +546,29 @@ class RadSacAgent(object):
         )
         if step % self.log_interval == 0:
             L.log("train_actor/entropy", entropy.mean(), step)
+
+        if aug_obs is not None:
+            aug_mu, aug_pi, aug_log_pi, aug_log_std = self.actor(
+                aug_obs, detach_encoder=True
+            )
+            aug_actor_Q1, aug_actor_Q2 = self.critic(
+                aug_obs, aug_pi, detach_encoder=True
+            )
+            V = (torch.min(actor_Q1, actor_Q2) - self.alpha.detach() * log_pi).detach
+            aug_V = (
+                torch.min(aug_actor_Q1, aug_actor_Q2) - self.alpha.detach() * aug_log_pi
+            )
+            policy_reg = F.kl_div(
+                torch.normal(mu, log_std.exp()).detach(),
+                torch.normal(aug_mu, aug_log_std.exp()),
+            )
+            value_reg = F.mse_loss(V, aug_V)
+
+            actor_loss += self.drac_alpha * (value_reg + policy_reg)
+
+            if step % self.log_interval == 0:
+                L.log("train_actor/policy_regularization", policy_reg, step)
+                L.log("train_actor/value_regularization", value_reg, step)
 
         # optimize the actor
         self.actor_optimizer.zero_grad()
@@ -590,12 +612,22 @@ class RadSacAgent(object):
             L.log("train/curl_loss", loss, step)
 
     def update(self, replay_buffer, L, step):
-        if self.encoder_type == "pixel":
+        aug_obs = None
+        if self.mode:
+            if "drac" in self.mode:
+                obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(None)
+
+            if "ucb" in self.mode:
+                self.ucb_select_aug()
+                aug_obs, _, _, _, _ = replay_buffer.sample_rad(
+                    {self.last_aug: self.augs_funcs[self.last_aug]}
+                )
+            else:
+                aug_obs, _, _, _, _ = replay_buffer.sample_rad(self.augs_funcs)
+        else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                 self.augs_funcs
             )
-        else:
-            obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
 
         if step % self.log_interval == 0:
             L.log("train/batch_reward", reward.mean(), step)
@@ -603,7 +635,7 @@ class RadSacAgent(object):
         self.update_critic(obs, action, reward, next_obs, not_done, L, step)
 
         if step % self.actor_update_freq == 0:
-            self.update_actor_and_alpha(obs, L, step)
+            self.update_actor_and_alpha(obs=obs, L=L, step=step, aug_obs=aug_obs)
 
         if step % self.critic_target_update_freq == 0:
             utils.soft_update_params(
