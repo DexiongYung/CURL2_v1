@@ -70,8 +70,15 @@ def parse_args():
     parser.add_argument("--config_file", default="./configs/vanilla.json", type=str)
     parser.add_argument("--device_id", default=0, type=int)
     # data augs
+    parser.add_argument("--mode", default=None, type=str)
     parser.add_argument("--data_augs", default="crop", type=str)
     parser.add_argument("--log_interval", default=100, type=int)
+    # DrAC args
+    parser.add_argument("--drac_alpha", default=0.1, type=float)
+    # UCB args
+    parser.add_argument("--ucb_explore_coef", default=500, type=int)
+    parser.add_argument("--ucb_max_len", default=10, type=10)
+
     args = parser.parse_args()
     return args
 
@@ -183,6 +190,10 @@ def make_agent(obs_shape, action_shape, args, device):
             detach_encoder=args.detach_encoder,
             latent_dim=args.latent_dim,
             data_augs=args.data_augs,
+            ucb_explore_coef=args.ucb_explore_ceof,
+            ucb_max_len=args.ucb_max_len,
+            mode=args.mode,
+            drac_alpha=args.drac_alpha,
         )
     else:
         assert "agent is not supported: %s" % args.agent
@@ -348,9 +359,17 @@ def main():
 
         # run training update
         if step >= args.init_steps:
-            num_updates = 1
-            for _ in range(num_updates):
-                agent.update(replay_buffer, L, step)
+            agent.update(replay_buffer, L, step)
+
+            if agent.ucb_on:
+                ep_reward = run_single_eval(
+                    env=eval_env,
+                    agent=agent,
+                    args=args,
+                    video=None,
+                    sample_stochastically=False,
+                )
+                agent.ucb_update_values(ep_reward)
 
         next_obs, reward, done, _ = env.step(action)
 

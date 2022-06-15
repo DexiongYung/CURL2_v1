@@ -1,3 +1,5 @@
+from collections import deque
+from multiprocessing.sharedctypes import Value
 import numpy as np
 import torch
 import torch.nn as nn
@@ -293,9 +295,10 @@ class RadSacAgent(object):
         detach_encoder=False,
         latent_dim=128,
         data_augs="",
+        mode=None,
         ucb_explore_coef=None,
-        ucb_score_len=None,
-        drac_alpah=None
+        ucb_max_len=None,
+        drac_alpha=None,
     ):
         self.device = device
         self.discount = discount
@@ -310,6 +313,7 @@ class RadSacAgent(object):
         self.detach_encoder = detach_encoder
         self.encoder_type = encoder_type
         self.data_augs = data_augs
+        self.ucb_on = "ucb" in mode
 
         aug_to_func = {
             "crop": dict(func=rad.random_crop, params=dict(out=84)),
@@ -348,6 +352,32 @@ class RadSacAgent(object):
             self.augs_funcs[aug_name] = aug_to_func[aug_name]
 
         print(f"Aug set: {self.augs_funcs}")
+
+        print(f"SAC Agent mode is: {mode}")
+        if mode:
+            if "drac" in mode:
+                self.drac_alpha = drac_alpha
+                print(f"DrAC on and alpha is: {self.drac_alpha}")
+            else:
+                raise ValueError(f"Mode is set to: {mode}, but this is not defined")
+
+            if "ucb" in mode:
+                self.ucb_explore_coef = ucb_explore_coef
+                self.ucb_max_len = ucb_max_len
+                self.ucb_step = 0
+                self.last_aug = None
+                self.ucb_dict = dict()
+
+                for key, _ in self.augs_funcs:
+                    self.ucb_dict[key] = dict(
+                        count=1, ep_reward_list=deque([0], maxlen=self.ucb_max_len)
+                    )
+
+                print(
+                    "UCB is on with params: \n"
+                    + f"explore coefficient: {self.ucb_explore_coef}\n"
+                    + f"explore max len: {self.ucb_max_len}"
+                )
 
         self.actor = Actor(
             obs_shape,
@@ -453,6 +483,28 @@ class RadSacAgent(object):
             obs = obs.unsqueeze(0)
             mu, pi, _, _ = self.actor(obs, compute_log_pi=False)
             return pi.cpu().data.numpy().flatten()
+
+    def ucb_select_aug(self):
+        self.ucb_step += 1
+        best_key = None
+        best_score = float("-inf")
+
+        for key, value in self.ucb_dict:
+            count = value["count"]
+            reward_list = value["ep_reward_list"]
+            curr_score = np.mean(reward_list) + self.ucb_explore_coef * np.sqrt(
+                np.log(self.ucb_step) / count
+            )
+
+            if best_score < curr_score:
+                best_score = curr_score
+                best_key = key
+
+        self.last_aug = best_key
+
+    def ucb_update_values(self, eval_reward: float):
+        self.ucb_dict[self.last_aug]["ep_reward_list"].append(eval_reward)
+        self.ucb_dict[self.last_aug]["count"] += 1
 
     def update_critic(self, obs, action, reward, next_obs, not_done, L, step):
         with torch.no_grad():
