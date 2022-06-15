@@ -293,6 +293,9 @@ class RadSacAgent(object):
         detach_encoder=False,
         latent_dim=128,
         data_augs="",
+        ucb_explore_coef=None,
+        ucb_score_len=None,
+        drac_alpah=None
     ):
         self.device = device
         self.discount = discount
