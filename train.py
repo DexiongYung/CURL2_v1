@@ -76,6 +76,32 @@ def parse_args():
     return args
 
 
+def run_single_eval(env, agent, args, video=None, sample_stochastically=False):
+    obs = env.reset()
+    done = False
+    episode_reward = 0
+    while not done:
+        # center crop image
+        if args.encoder_type == "pixel" and "crop" in args.data_augs:
+            obs = utils.center_crop_image(obs, args.image_size)
+        if args.encoder_type == "pixel" and "translate" in args.data_augs:
+            # first crop the center with pre_image_size
+            obs = utils.center_crop_image(obs, args.pre_transform_image_size)
+            # then translate cropped to center
+            obs = utils.center_translate(obs, args.image_size)
+        with utils.eval_mode(agent):
+            if sample_stochastically:
+                action = agent.sample_action(obs / 255.0)
+            else:
+                action = agent.select_action(obs / 255.0)
+            obs, reward, done, _ = env.step(action)
+
+            if video is not None:
+                video.record(env)
+            episode_reward += reward
+    return episode_reward
+
+
 def evaluate(env, agent, video, num_episodes, L, step, args, work_dir):
     all_ep_rewards = []
 
@@ -83,27 +109,14 @@ def evaluate(env, agent, video, num_episodes, L, step, args, work_dir):
         start_time = time.time()
         prefix = "stochastic_" if sample_stochastically else ""
         for i in range(num_episodes):
-            obs = env.reset()
             video.init(enabled=(i == 0))
-            done = False
-            episode_reward = 0
-            while not done:
-                # center crop image
-                if args.encoder_type == "pixel" and "crop" in args.data_augs:
-                    obs = utils.center_crop_image(obs, args.image_size)
-                if args.encoder_type == "pixel" and "translate" in args.data_augs:
-                    # first crop the center with pre_image_size
-                    obs = utils.center_crop_image(obs, args.pre_transform_image_size)
-                    # then translate cropped to center
-                    obs = utils.center_translate(obs, args.image_size)
-                with utils.eval_mode(agent):
-                    if sample_stochastically:
-                        action = agent.sample_action(obs / 255.0)
-                    else:
-                        action = agent.select_action(obs / 255.0)
-                obs, reward, done, _ = env.step(action)
-                video.record(env)
-                episode_reward += reward
+            episode_reward = run_single_eval(
+                env=env,
+                agent=agent,
+                video=video,
+                args=args,
+                sample_stochastically=sample_stochastically,
+            )
 
             video.save("%d.mp4" % step)
             L.log("eval/" + prefix + "episode_reward", episode_reward, step)
@@ -209,11 +222,21 @@ def main():
         frame_skip=args.action_repeat,
     )
 
-    env.seed(args.seed)
+    eval_env = dmc2gym.make(
+        domain_name=args.domain_name,
+        task_name=args.task_name,
+        seed=args.seed,
+        visualize_reward=False,
+        from_pixels=(args.encoder_type == "pixel"),
+        height=pre_transform_image_size,
+        width=pre_transform_image_size,
+        frame_skip=args.action_repeat,
+    )
 
     # stack several consecutive frames together
     if args.encoder_type == "pixel":
         env = utils.FrameStack(env, k=args.frame_stack)
+        eval_env = utils.FrameStack(eval_env, k=args.frame_stack)
 
     # make directory
     ts = time.gmtime()
@@ -278,10 +301,14 @@ def main():
 
     for step in range(args.num_train_steps):
         # evaluate agent periodically
-        if step % args.eval_freq == 0 or step == args.num_train_steps - 1 and step > 0:
+        if (
+            step % args.eval_freq == 0
+            and step > args.init_steps
+            or step == args.num_train_steps - 1
+        ):
             L.log("eval/episode", episode, step)
             evaluate(
-                env,
+                eval_env,
                 agent,
                 video,
                 args.num_eval_episodes,
