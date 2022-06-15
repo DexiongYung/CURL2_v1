@@ -616,9 +616,14 @@ class RadSacAgent(object):
 
     def update(self, replay_buffer, L, step):
         self.last_aug = None
-        obs, action, reward, next_obs, not_done, idxs = replay_buffer.sample_rad(
-            self.augs_funcs, return_idxs=True
-        )
+        if self.mode and "drac" in self.mode:
+            obs, action, reward, next_obs, not_done, idxs = replay_buffer.sample_rad(
+                None, return_idxs=True
+            )
+        else:
+            obs, action, reward, next_obs, not_done, idxs = replay_buffer.sample_rad(
+                self.augs_funcs, return_idxs=True
+            )
 
         if step % self.log_interval == 0:
             L.log("train/batch_reward", reward.mean(), step)

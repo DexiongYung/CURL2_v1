@@ -23,6 +23,15 @@
             "args": ["--config_file", "./configs/vanilla.json"]
         },
         {
+            "name": "Train DrAC",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/drac.json"]
+        },
+        {
             "name": "Test",
             "type": "python",
             "request": "launch",

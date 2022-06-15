@@ -237,13 +237,16 @@ def main():
     eval_env = dmc2gym.make(
         domain_name=args.domain_name,
         task_name=args.task_name,
-        seed=args.seed,
+        seed=args.seed + 1,
         visualize_reward=False,
         from_pixels=(args.encoder_type == "pixel"),
         height=pre_transform_image_size,
         width=pre_transform_image_size,
         frame_skip=args.action_repeat,
     )
+
+    env.seed(args.seed)
+    eval_env.seed(args.seed + 1)
 
     # stack several consecutive frames together
     if args.encoder_type == "pixel":
@@ -360,7 +363,7 @@ def main():
                             count=values["count"],
                             mean_reward=np.mean(values["ep_reward_list"]),
                         )
-
+                    print(f"Step: {step}")
                     print(print_dict)
 
         # sample action for data collection
