@@ -50,6 +50,15 @@
             "args": ["--config_file", "./configs/infomin.json"]
         },
         {
+            "name": "Train CURL",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/curl.json"]
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
