@@ -300,6 +300,7 @@ def main():
             )
             if args.save_model:
                 agent.save_curl(checkpoint_dir, step)
+                agent.save(checkpoint_dir, step)
             if args.save_buffer:
                 replay_buffer.save(buffer_dir)
 
@@ -332,9 +333,7 @@ def main():
 
         # run training update
         if step >= args.init_steps:
-            num_updates = 1
-            for _ in range(num_updates):
-                agent.update(replay_buffer, L, step)
+            agent.update(replay_buffer, L, step)
 
         next_obs, reward, done, _ = env.step(action)
 

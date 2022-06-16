@@ -381,6 +381,7 @@ class RadSacAgent(object):
         else:
             aug_grid_search_dict = None
 
+        self.augs_funcs = {}
         for aug_name in self.data_augs.split("-"):
             assert aug_name in self.aug_to_func, "invalid data aug string"
             self.augs_funcs[aug_name] = self.aug_to_func[aug_name]
@@ -569,7 +570,7 @@ class RadSacAgent(object):
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         self.actor_optimizer.step()
-        
+
         # TODO!!!
         # self.actor.log(L, step)
 
@@ -786,6 +787,9 @@ class RadSacAgent(object):
                 self.critic.encoder, self.critic_target.encoder, self.encoder_tau
             )
 
+        # if step % self.cpc_update_freq == 0 and self.encoder_type == 'pixel':
+        #    obs_anchor, obs_pos = cpc_kwargs["obs_anchor"], cpc_kwargs["obs_pos"]
+        #    self.update_cpc(obs_anchor, obs_pos, L, step)
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
