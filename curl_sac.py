@@ -282,14 +282,14 @@ class InfoMin(nn.Module):
         hidden_dim,
         num_layers,
         num_filters,
-        is_color_mode,
+        color_mode,
     ):
         super(InfoMin, self).__init__()
-        self.is_color_mode = is_color_mode
+        self.color_mode = color_mode
         self.frame_stack_sz = obs_shape[0]
         self.image_size = obs_shape[-1]
         self.num_imgs = int(self.frame_stack_sz / 3)
-        if self.is_color_mode:
+        if self.color_mode:
             obs_shape_1 = self.num_imgs
             obs_shape_2 = 2 * self.num_imgs
         else:
@@ -316,18 +316,34 @@ class InfoMin(nn.Module):
         )
 
     def discriminator_encode(self, obs, reshape_to_frame_stack=False):
+        obs_RGB = self.reshape_to_RGB(obs=obs)
+
+        if self.color_mode == YDBDR:
+            obs_RGB = self.RGB_to_YDbDr(obs_RGB=obs_RGB)
+
+        obs_dis = self.discriminator.forward(obs_RGB)
+
         if reshape_to_frame_stack:
-            return self.reshape_to_frame_stack(
-                obs=self.discriminator.forward(self.reshape_to_RGB(obs=obs))
-            )
+            return self.reshape_to_frame_stack(obs_dis)
         else:
-            return self.discriminator.forward(self.reshape_to_RGB(obs=obs))
+            return obs_dis
 
     def reshape_to_RGB(self, obs):
         return obs.reshape(-1, 3, self.image_size, self.image_size)
 
     def reshape_to_frame_stack(self, obs):
         return obs.reshape(-1, self.frame_stack_sz, self.image_size, self.image_size)
+
+    def RGB_to_YDbDr(self, obs_RGB):
+        r = obs_RGB[:, 0]
+        g = obs_RGB[:, 1]
+        b = obs_RGB[:, 2]
+
+        y = 0.299 * r + 0.587 * g + 0.114 * b
+        db = -0.450 * r + -0.883 * g + 1.333 * b
+        dr = -1.333 * r + 1.116 * g + 0.217 * b
+
+        return torch.stack([y, db, dr], -3)
 
     def split_RGB_into_R_GB(self, obs):
         return torch.split(tensor=obs, split_size_or_sections=[1, 2], dim=1)
@@ -532,14 +548,18 @@ class RadSacAgent(object):
 
             self.cpc_optimizer = torch.optim.Adam(self.CURL.parameters(), lr=encoder_lr)
         elif INFO_MIN in self.mode:
-            is_color_mode = any(word in self.mode for word in COLOR_MODES_LIST)
+            color_mode = None
+            for word in self.mode.split("-"):
+                if word in COLOR_MODES_LIST:
+                    color_mode = word
+
             self.infomin = InfoMin(
                 obs_shape=obs_shape,
                 encoder_type=encoder_type,
                 hidden_dim=hidden_dim,
                 num_filters=num_filters,
                 num_layers=num_layers,
-                is_color_mode=is_color_mode,
+                color_mode=color_mode,
             ).to(self.device)
 
             encoders_params = list(
@@ -721,13 +741,18 @@ class RadSacAgent(object):
         labels = torch.arange(logits.shape[0]).long().to(self.device)
         loss = self.cross_entropy_loss(logits, labels)
 
-        self.infomin_encoders_optimizer.zero_grad()
-        (-loss).backward(retain_graph=True)
-        self.infomin_encoders_optimizer.step()
-
         self.infomin_discrim_optimizer.zero_grad()
         loss.backward()
         self.infomin_discrim_optimizer.step()
+
+        logits = self.infomin.compute_logits(
+            anchor=obs_ch1.detach(), pos=obs_ch23.detach()
+        )
+        encoder_loss = self.cross_entropy_loss(logits, labels)
+
+        self.infomin_encoders_optimizer.zero_grad()
+        (-encoder_loss).backward()
+        self.infomin_encoders_optimizer.step()
 
         if step % self.log_interval == 0:
             L.log("train/NCE_loss", loss, step)
@@ -768,7 +793,7 @@ class RadSacAgent(object):
                 idxs,
             ) = replay_buffer.sample_rad(None, return_idxs=True)
 
-            if self.infomin.is_color_mode:
+            if self.infomin.color_mode:
                 obs_RGB = self.infomin.discriminator_encode(obs=obs)
                 obs = self.infomin.reshape_to_frame_stack(obs=obs_RGB).detach()
         else:
@@ -803,7 +828,7 @@ class RadSacAgent(object):
                 obs_pos = self.get_augs_obs_pos(replay_buffer=replay_buffer, idxs=idxs)
                 self.update_cpc(obs_anchor=obs, obs_pos=obs_pos, L=L, step=step)
             elif INFO_MIN in self.mode:
-                if self.infomin.is_color_mode:
+                if self.infomin.color_mode:
                     self.update_info_min(obs_RGB=obs_RGB, L=L, step=step)
 
     def save(self, model_dir, step):
