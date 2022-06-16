@@ -1,3 +1,4 @@
+import random
 import numpy as np
 import torch
 import torch.nn as nn
@@ -293,6 +294,8 @@ class RadSacAgent(object):
         detach_encoder=False,
         latent_dim=128,
         data_augs="",
+        mode="",
+        prune_interval=200,
     ):
         self.device = device
         self.discount = discount
@@ -307,8 +310,10 @@ class RadSacAgent(object):
         self.detach_encoder = detach_encoder
         self.encoder_type = encoder_type
         self.data_augs = data_augs
+        self.prune_interval = prune_interval
+        self.mode = mode
 
-        aug_to_func = {
+        self.aug_to_func = {
             "crop": dict(func=rad.random_crop, params=dict(out=84)),
             "grayscale": dict(func=rad.random_grayscale, params=dict(p=0.3)),
             "cutout": dict(func=rad.random_cutout, params=dict(min_cut=10, max_cut=30)),
@@ -339,10 +344,32 @@ class RadSacAgent(object):
             "no_aug": dict(func=rad.no_aug, params=dict()),
         }
 
+        self.aug_func_params = {
+            "center_crop": [dict(out=self.image_size - i * 2) for i in range(20)],
+            "translate_cc": [dict(crop_sz=self.image_size - i * 2) for i in range(20)],
+            "in_frame_translate": [
+                dict(size=self.image_size - i * 2) for i in range(20)
+            ],
+            "center_crop_drac": [dict(out=self.image_size + 2 * i) for i in range(20)],
+        }
+
         self.augs_funcs = {}
-        for aug_name in self.data_augs.split("-"):
-            assert aug_name in aug_to_func, "invalid data aug string"
-            self.augs_funcs[aug_name] = aug_to_func[aug_name]
+
+        if mode == "tune":
+            assert self.data_augs in self.aug_func_params
+            samples = random.choices(self.aug_func_params[self.data_augs], k=4)
+
+            for sample in samples:
+                self.augs_funcs[f"{self.data_augs}/{str(sample)}"] = dict(
+                    func=self.aug_to_func[self.data_augs]["func"],
+                    params=sample,
+                    score=0,
+                )
+                self.aug_func_params[self.data_augs].remove(sample)
+        else:
+            for aug_name in self.data_augs.split("-"):
+                assert aug_name in self.aug_to_func, "invalid data aug string"
+                self.augs_funcs[aug_name] = self.aug_to_func[aug_name]
 
         print(f"Aug set: {self.augs_funcs}")
 
@@ -451,7 +478,7 @@ class RadSacAgent(object):
             mu, pi, _, _ = self.actor(obs, compute_log_pi=False)
             return pi.cpu().data.numpy().flatten()
 
-    def update_critic(self, obs, action, reward, next_obs, not_done, L, step):
+    def calculate_critic_loss(self, obs, action, reward, next_obs, not_done):
         with torch.no_grad():
             _, policy_action, log_pi, _ = self.actor(next_obs)
             target_Q1, target_Q2 = self.critic_target(next_obs, policy_action)
@@ -462,9 +489,9 @@ class RadSacAgent(object):
         current_Q1, current_Q2 = self.critic(
             obs, action, detach_encoder=self.detach_encoder
         )
-        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
-            current_Q2, target_Q
-        )
+        return F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
+
+    def backprop_on_critic_loss(self, critic_loss, L, step):
         if step % self.log_interval == 0:
             L.log("train_critic/loss", critic_loss, step)
 
@@ -472,6 +499,13 @@ class RadSacAgent(object):
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
         self.critic_optimizer.step()
+
+    def update_critic(self, obs, action, reward, next_obs, not_done, L, step):
+        critic_loss = self.calculate_critic_loss(
+            obs=obs, action=action, reward=reward, next_obs=next_obs, not_done=not_done
+        )
+
+        self.backprop_on_critic_loss(critic_loss=critic_loss, L=L, step=step)
 
         # TODD!!!
         # self.critic.log(L, step)
@@ -534,18 +568,84 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log("train/curl_loss", loss, step)
 
+    def EPE(self, replay_buffer, L, step):
+        best_obs = None
+        best_next_obs = None
+        best_loss = float("-inf")
+        best_key = None
+        idxs = None
+
+        for key, aug_dict in self.augs_funcs.items():
+            param = aug_dict["params"]
+            func_dict = {
+                self.data_augs: dict(
+                    func=self.aug_to_func[self.data_augs]["func"], params=param
+                )
+            }
+
+            if idxs is None:
+                (
+                    obs,
+                    action,
+                    reward,
+                    next_obs,
+                    not_done,
+                    idxs,
+                ) = replay_buffer.sample_rad(func_dict, return_idxs=True)
+            else:
+                obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
+                    func_dict, idxs=idxs
+                )
+
+            critic_loss = self.calculate_critic_loss(
+                obs=obs,
+                action=action,
+                reward=reward,
+                next_obs=next_obs,
+                not_done=not_done,
+            )
+
+            if critic_loss > best_loss:
+                best_obs = obs
+                best_next_obs = next_obs
+                best_loss = critic_loss
+                best_key = key
+
+        for key, aug_dict in self.augs_funcs.items():
+            if key == best_key:
+                aug_dict["score"] = 0
+            else:
+                aug_dict["score"] += 1
+
+            if aug_dict["score"] == self.prune_interval:
+                del self.augs_funcs[key]
+                new_param = random.sample(self.aug_func_params[self.data_augs], 1)[0]
+                self.augs_funcs[f"{self.data_augs}/{str(new_param)}"] = dict(
+                    func=self.aug_to_func[self.data_augs]["func"],
+                    params=new_param,
+                    score=0,
+                )
+
+        self.backprop_on_critic_loss(critic_loss=best_loss, L=L, step=step)
+        return best_obs, action, reward, best_next_obs, not_done
+
     def update(self, replay_buffer, L, step):
         if self.encoder_type == "pixel":
-            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
-                self.augs_funcs
-            )
+            if self.mode == "tune":
+                obs, action, reward, next_obs, not_done = self.EPE(
+                    replay_buffer=replay_buffer, L=L, step=step
+                )
+            else:
+                obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
+                    self.augs_funcs
+                )
+                self.update_critic(obs, action, reward, next_obs, not_done, L, step)
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
+            self.update_critic(obs, action, reward, next_obs, not_done, L, step)
 
         if step % self.log_interval == 0:
             L.log("train/batch_reward", reward.mean(), step)
-
-        self.update_critic(obs, action, reward, next_obs, not_done, L, step)
 
         if step % self.actor_update_freq == 0:
             self.update_actor_and_alpha(obs, L, step)
