@@ -9,7 +9,7 @@ import dmc2gym
 import utils
 from logger import Logger
 from video import VideoRecorder
-from curl_sac import RadSacAgent, UCB
+from curl_sac import RadSacAgent, UCB, CURL_SAC
 
 
 def parse_args():
@@ -335,7 +335,9 @@ def main():
                 work_dir=work_dir,
             )
             if args.save_model:
-                agent.save_curl(checkpoint_dir, step)
+                agent.save(checkpoint_dir, step)
+                if CURL_SAC in agent.mode:
+                    agent.save_curl(checkpoint_dir, step)
             if args.save_buffer:
                 replay_buffer.save(buffer_dir)
 
