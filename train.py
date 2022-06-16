@@ -9,7 +9,7 @@ import dmc2gym
 import utils
 from logger import Logger
 from video import VideoRecorder
-from curl_sac import RadSacAgent
+from curl_sac import RadSacAgent, UCB
 
 
 def parse_args():
@@ -71,7 +71,7 @@ def parse_args():
     parser.add_argument("--config_file", default="./configs/vanilla.json", type=str)
     parser.add_argument("--device_id", default=0, type=int)
     # data augs
-    parser.add_argument("--mode", default=None, type=str)
+    parser.add_argument("--mode", default="", type=str)
     parser.add_argument("--data_augs", default="crop", type=str)
     parser.add_argument("--log_interval", default=100, type=int)
     # DrAC args
@@ -356,15 +356,14 @@ def main():
             if step % args.log_interval == 0:
                 L.log("train/episode", episode, step)
 
-                if agent.mode and "ucb" in agent.mode:
+                if UCB in agent.mode:
                     print_dict = dict()
                     for key, values in agent.ucb_dict.items():
                         print_dict[key] = dict(
                             count=values["count"],
                             mean_reward=np.mean(values["ep_reward_list"]),
                         )
-                    print(f"Step: {step}")
-                    print(print_dict)
+                    print(f"Step: {step}, {print_dict}")
 
         # sample action for data collection
         if step < args.init_steps:
@@ -377,7 +376,7 @@ def main():
         if step >= args.init_steps:
             agent.update(replay_buffer, L, step)
 
-            if agent.mode and "ucb" in agent.mode and agent.last_aug:
+            if UCB in agent.mode and agent.last_aug:
                 ep_reward = run_single_eval(
                     env=eval_env,
                     agent=agent,

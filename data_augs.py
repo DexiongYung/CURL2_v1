@@ -275,7 +275,13 @@ def random_color_jitter(imgs, bright=0.4, contrast=0.4, satur=0.4, hue=0.5):
     imgs = imgs.view(-1, 3, h, w)
     transform_module = nn.Sequential(
         ColorJitterLayer(
-            brightness=bright, contrast=contrast, saturation=satur, hue=hue, p=1.0, batch_size=b, stack_size=c
+            brightness=bright,
+            contrast=contrast,
+            saturation=satur,
+            hue=hue,
+            p=1.0,
+            batch_size=b,
+            stack_size=c,
         )
     )
 
@@ -289,7 +295,9 @@ def kornia_color_jitter(imgs, bright=0.4, contrast=0.4, satur=0.4, hue=0.49):
     """
     b, c, h, w = imgs.shape
     imgs = imgs.view(-1, 3, h, w)
-    model = kornia.augmentation.ColorJitter(brightness=bright, contrast=contrast, saturation=satur, hue=hue)
+    model = kornia.augmentation.ColorJitter(
+        brightness=bright, contrast=contrast, saturation=satur, hue=hue
+    )
     imgs = model(imgs).view(b, c, h, w)
     return imgs
 
@@ -310,24 +318,50 @@ def random_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
 def in_frame_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
     _, _, _, w = imgs.shape
     if return_random_idxs:
-        outs, dims = random_translate(imgs=imgs, size=size, return_random_idxs=return_random_idxs, h1s=h1s, w1s=w1s)
+        outs, dims = random_translate(
+            imgs=imgs,
+            size=size,
+            return_random_idxs=return_random_idxs,
+            h1s=h1s,
+            w1s=w1s,
+        )
         return center_crop_images(image=outs, output_size=w), dims
     else:
-        outs = random_translate(imgs=imgs, size=size, return_random_idxs=return_random_idxs, h1s=h1s, w1s=w1s)
+        outs = random_translate(
+            imgs=imgs,
+            size=size,
+            return_random_idxs=return_random_idxs,
+            h1s=h1s,
+            w1s=w1s,
+        )
         return center_crop_images(image=outs, output_size=w)
 
 
 def crop_translate(imgs, out, return_random_idxs=False, h1s=None, w1s=None):
     _, _, h, _ = imgs.shape
     cropped_imgs = random_crop(imgs=imgs, out=out)
-    return random_translate(imgs=cropped_imgs, size=h, return_random_idxs=return_random_idxs, h1s=h1s, w1s=w1s)
+    return random_translate(
+        imgs=cropped_imgs,
+        size=h,
+        return_random_idxs=return_random_idxs,
+        h1s=h1s,
+        w1s=w1s,
+    )
 
 
-def translate_center_crop(imgs, crop_sz=100, return_random_idxs=False, h1s=None, w1s=None):
+def translate_center_crop(
+    imgs, crop_sz=100, return_random_idxs=False, h1s=None, w1s=None
+):
     _, _, h, _ = imgs.shape
     assert crop_sz <= h
     cropped_imgs = center_crop_images(image=imgs, output_size=crop_sz)
-    return random_translate(imgs=cropped_imgs, size=h, return_random_idxs=return_random_idxs, h1s=h1s, w1s=w1s)
+    return random_translate(
+        imgs=cropped_imgs,
+        size=h,
+        return_random_idxs=return_random_idxs,
+        h1s=h1s,
+        w1s=w1s,
+    )
 
 
 def no_aug(x):

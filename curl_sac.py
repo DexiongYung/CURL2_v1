@@ -11,6 +11,18 @@ import data_augs as rad
 
 LOG_FREQ = 10000
 
+# SAC Algorithms
+INFO_MIN = "infomin"
+DRAC = "drac"
+CURL_SAC = "curl"
+
+# View Selection Algorithms
+UCB = "ucb"
+RGB = "rgb"
+YDBDR = "ydbdr"
+
+COLOR_MODES_LIST = [RGB, YDBDR]
+
 
 def gaussian_logprob(noise, log_std):
     """Compute Gaussian log probability."""
@@ -354,32 +366,28 @@ class RadSacAgent(object):
         print(f"Aug set: {self.augs_funcs}")
 
         print(f"SAC Agent mode is: {self.mode}")
-        if self.mode:
-            if "drac" in self.mode:
-                self.drac_alpha = drac_alpha
-                print(f"DrAC on and alpha is: {self.drac_alpha}")
-            else:
-                raise ValueError(
-                    f"Mode is set to: {self.mode}, but this is not defined"
+
+        if DRAC in self.mode:
+            self.drac_alpha = drac_alpha
+            print(f"DrAC on and alpha is: {self.drac_alpha}")
+
+        if UCB in self.mode:
+            self.ucb_explore_coef = ucb_explore_coef
+            self.ucb_max_len = ucb_max_len
+            self.ucb_step = 0
+            self.last_aug = None
+            self.ucb_dict = dict()
+
+            for key, _ in self.augs_funcs.items():
+                self.ucb_dict[key] = dict(
+                    count=1, ep_reward_list=deque([0], maxlen=self.ucb_max_len)
                 )
 
-            if "ucb" in self.mode:
-                self.ucb_explore_coef = ucb_explore_coef
-                self.ucb_max_len = ucb_max_len
-                self.ucb_step = 0
-                self.last_aug = None
-                self.ucb_dict = dict()
-
-                for key, _ in self.augs_funcs.items():
-                    self.ucb_dict[key] = dict(
-                        count=1, ep_reward_list=deque([0], maxlen=self.ucb_max_len)
-                    )
-
-                print(
-                    "UCB is on with params: \n"
-                    + f"explore coefficient: {self.ucb_explore_coef}\n"
-                    + f"explore max len: {self.ucb_max_len}"
-                )
+            print(
+                "UCB is on with params: \n"
+                + f"explore coefficient: {self.ucb_explore_coef}\n"
+                + f"explore max len: {self.ucb_max_len}"
+            )
 
         self.actor = Actor(
             obs_shape,
@@ -508,6 +516,17 @@ class RadSacAgent(object):
         self.ucb_dict[self.last_aug]["ep_reward_list"].append(eval_reward)
         self.ucb_dict[self.last_aug]["count"] += 1
 
+    def get_augs_obs_pos(self, replay_buffer, idxs):
+        if UCB in self.mode:
+            self.ucb_select_aug()
+            aug_obs, _, _, _, _ = replay_buffer.sample_rad(
+                {self.last_aug: self.augs_funcs[self.last_aug]}, idxs=idxs
+            )
+        else:
+            aug_obs, _, _, _, _ = replay_buffer.sample_rad(self.augs_funcs, idxs=idxs)
+
+        return aug_obs
+
     def update_critic(self, obs, action, reward, next_obs, not_done, L, step):
         with torch.no_grad():
             _, policy_action, log_pi, _ = self.actor(next_obs)
@@ -550,13 +569,14 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log("train_actor/entropy", entropy.mean(), step)
 
-        if aug_obs is not None:
+        if DRAC in self.mode and aug_obs is not None:
             aug_mu, aug_pi, aug_log_pi, aug_log_std = self.actor(
                 aug_obs, detach_encoder=True
             )
             aug_actor_Q1, aug_actor_Q2 = self.critic(
                 aug_obs, aug_pi, detach_encoder=True
             )
+
             V = (torch.min(actor_Q1, actor_Q2) - self.alpha.detach() * log_pi).detach()
             aug_V = (
                 torch.min(aug_actor_Q1, aug_actor_Q2) - self.alpha.detach() * aug_log_pi
@@ -566,7 +586,6 @@ class RadSacAgent(object):
                 torch.normal(aug_mu, aug_log_std.exp()),
             )
             value_reg = F.mse_loss(V, aug_V)
-
             actor_loss += self.drac_alpha * (value_reg + policy_reg)
 
             if step % self.log_interval == 0:
@@ -590,7 +609,6 @@ class RadSacAgent(object):
         self.log_alpha_optimizer.step()
 
     def update_cpc(self, obs_anchor, obs_pos, L, step):
-
         # time flips
         """
         time_pos = cpc_kwargs["time_pos"]
@@ -616,13 +634,18 @@ class RadSacAgent(object):
 
     def update(self, replay_buffer, L, step):
         self.last_aug = None
-        if self.mode and "drac" in self.mode:
-            obs, action, reward, next_obs, not_done, idxs = replay_buffer.sample_rad(
-                None, return_idxs=True
-            )
+        if any(word in self.mode for word in [DRAC, INFO_MIN]):
+            (
+                obs,
+                action,
+                reward,
+                next_obs,
+                not_done,
+                idxs,
+            ) = replay_buffer.sample_rad(None, return_idxs=True)
         else:
-            obs, action, reward, next_obs, not_done, idxs = replay_buffer.sample_rad(
-                self.augs_funcs, return_idxs=True
+            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
+                self.augs_funcs,
             )
 
         if step % self.log_interval == 0:
@@ -632,16 +655,8 @@ class RadSacAgent(object):
 
         if step % self.actor_update_freq == 0:
             aug_obs = None
-            if self.mode and "drac" in self.mode:
-                if "ucb" in self.mode:
-                    self.ucb_select_aug()
-                    aug_obs, _, _, _, _ = replay_buffer.sample_rad(
-                        {self.last_aug: self.augs_funcs[self.last_aug]}, idxs=idxs
-                    )
-                else:
-                    aug_obs, _, _, _, _ = replay_buffer.sample_rad(
-                        self.augs_funcs, idxs=idxs
-                    )
+            if DRAC in self.mode:
+                aug_obs = self.get_augs_obs_pos(replay_buffer=replay_buffer, idxs=idxs)
             self.update_actor_and_alpha(obs=obs, L=L, step=step, aug_obs=aug_obs)
 
         if step % self.critic_target_update_freq == 0:
@@ -655,9 +670,12 @@ class RadSacAgent(object):
                 self.critic.encoder, self.critic_target.encoder, self.encoder_tau
             )
 
-        # if step % self.cpc_update_freq == 0 and self.encoder_type == 'pixel':
-        #    obs_anchor, obs_pos = cpc_kwargs["obs_anchor"], cpc_kwargs["obs_pos"]
-        #    self.update_cpc(obs_anchor, obs_pos, L, step)
+        if (
+            any(word in self.mode for word in [INFO_MIN, CURL_SAC])
+            and step % self.cpc_update_freq == 0
+        ):
+            obs_pos = self.get_augs_obs_pos(replay_buffer=replay_buffer, idxs=idxs)
+            self.update_cpc(obs_anchor=obs, obs_pos=obs_pos, L=L, step=step)
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
