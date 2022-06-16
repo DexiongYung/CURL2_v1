@@ -292,6 +292,7 @@ def main():
             )
             if args.save_model:
                 agent.save_curl(checkpoint_dir, step)
+                agent.save(checkpoint_dir, step)
             if args.save_buffer:
                 replay_buffer.save(buffer_dir)
 
