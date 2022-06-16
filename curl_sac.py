@@ -357,7 +357,7 @@ class RadSacAgent(object):
 
         if mode == "tune":
             assert self.data_augs in self.aug_func_params
-            samples = random.choices(self.aug_func_params[self.data_augs], k=4)
+            samples = np.random.choice(self.aug_func_params[self.data_augs], size=4, replace=False)
 
             for sample in samples:
                 self.augs_funcs[f"{self.data_augs}/{str(sample)}"] = dict(
