@@ -274,6 +274,77 @@ class CURL(nn.Module):
         return logits
 
 
+class InfoMin(nn.Module):
+    def __init__(
+        self,
+        obs_shape,
+        encoder_type,
+        hidden_dim,
+        num_layers,
+        num_filters,
+        is_color_mode,
+    ):
+        super(InfoMin, self).__init__()
+        self.is_color_mode = is_color_mode
+        self.frame_stack_sz = obs_shape[0]
+        self.image_size = obs_shape[-1]
+        self.num_imgs = int(self.frame_stack_sz / 3)
+        if self.is_color_mode:
+            obs_shape_1 = self.num_imgs
+            obs_shape_2 = 2 * self.num_imgs
+        else:
+            obs_shape_1 = obs_shape_2 = self.frame_stack_sz
+
+        self.adversarial_encoder_anchor = make_encoder(
+            encoder_type=encoder_type,
+            obs_shape=(obs_shape_1, self.image_size, self.image_size),
+            feature_dim=hidden_dim,
+            num_layers=num_layers,
+            num_filters=num_filters,
+        )
+
+        self.adversarial_encoder_pos = make_encoder(
+            encoder_type=encoder_type,
+            obs_shape=(obs_shape_2, self.image_size, self.image_size),
+            feature_dim=hidden_dim,
+            num_layers=num_layers,
+            num_filters=num_filters,
+        )
+
+        self.discriminator = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=3, kernel_size=1), nn.ReLU()
+        )
+
+    def discriminator_encode(self, obs, reshape_to_frame_stack=False):
+        if reshape_to_frame_stack:
+            return self.reshape_to_frame_stack(
+                obs=self.discriminator.forward(self.reshape_to_RGB(obs=obs))
+            )
+        else:
+            return self.discriminator.forward(self.reshape_to_RGB(obs=obs))
+
+    def reshape_to_RGB(self, obs):
+        return obs.reshape(-1, 3, self.image_size, self.image_size)
+
+    def reshape_to_frame_stack(self, obs):
+        return obs.reshape(-1, self.frame_stack_sz, self.image_size, self.image_size)
+
+    def split_RGB_into_R_GB(self, obs):
+        return torch.split(tensor=obs, split_size_or_sections=[1, 2], dim=1)
+
+    def R_GB_to_frame_stacked_R_GB(self, obs_R, obs_GB):
+        return obs_R.reshape(
+            -1, self.num_imgs, self.image_size, self.image_size
+        ), obs_GB.reshape(-1, self.num_imgs * 2, self.image_size, self.image_size)
+
+    def compute_logits(self, anchor, pos):
+        anchor_z = self.adversarial_encoder_anchor(anchor)
+        pos_z = self.adversarial_encoder_pos(pos)
+        logits = torch.matmul(anchor_z, pos_z.T)
+        logits = logits - torch.max(logits, 1)[0][:, None]
+        return logits
+
+
 class RadSacAgent(object):
     """RAD with SAC."""
 
@@ -364,7 +435,6 @@ class RadSacAgent(object):
             self.augs_funcs[aug_name] = aug_to_func[aug_name]
 
         print(f"Aug set: {self.augs_funcs}")
-
         print(f"SAC Agent mode is: {self.mode}")
 
         if DRAC in self.mode:
@@ -461,17 +531,39 @@ class RadSacAgent(object):
             )
 
             self.cpc_optimizer = torch.optim.Adam(self.CURL.parameters(), lr=encoder_lr)
-        self.cross_entropy_loss = nn.CrossEntropyLoss()
+        elif INFO_MIN in self.mode:
+            is_color_mode = any(word in self.mode for word in COLOR_MODES_LIST)
+            self.infomin = InfoMin(
+                obs_shape=obs_shape,
+                encoder_type=encoder_type,
+                hidden_dim=hidden_dim,
+                num_filters=num_filters,
+                num_layers=num_layers,
+                is_color_mode=is_color_mode,
+            ).to(self.device)
 
+            encoders_params = list(
+                self.infomin.adversarial_encoder_anchor.parameters()
+            ) + list(self.infomin.adversarial_encoder_pos.parameters())
+            self.infomin_encoders_optimizer = torch.optim.Adam(
+                encoders_params, lr=encoder_lr
+            )
+            self.infomin_discrim_optimizer = torch.optim.Adam(
+                self.infomin.discriminator.parameters(), lr=encoder_lr
+            )
+
+        self.cross_entropy_loss = nn.CrossEntropyLoss()
         self.train()
-        self.critic_target.train()
 
     def train(self, training=True):
+        self.critic_target.train()
         self.training = training
         self.actor.train(training)
         self.critic.train(training)
         if CURL_SAC in self.mode:
             self.CURL.train(training)
+        elif INFO_MIN in self.mode:
+            self.infomin.train(training)
 
     @property
     def alpha(self):
@@ -481,6 +573,12 @@ class RadSacAgent(object):
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
+
+            if INFO_MIN in self.mode:
+                obs = self.infomin.discriminator_encode(
+                    obs=obs, reshape_to_frame_stack=True
+                )
+
             mu, _, _, _ = self.actor(obs, compute_pi=False, compute_log_pi=False)
             return mu.cpu().data.numpy().flatten()
 
@@ -491,6 +589,12 @@ class RadSacAgent(object):
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
+
+            if INFO_MIN in self.mode:
+                obs = self.infomin.discriminator_encode(
+                    obs=obs, reshape_to_frame_stack=True
+                )
+
             mu, pi, _, _ = self.actor(obs, compute_log_pi=False)
             return pi.cpu().data.numpy().flatten()
 
@@ -608,6 +712,26 @@ class RadSacAgent(object):
         alpha_loss.backward()
         self.log_alpha_optimizer.step()
 
+    def update_info_min(self, obs_RGB, L, step):
+        obs_ch1, obs_ch23 = self.infomin.split_RGB_into_R_GB(obs=obs_RGB)
+        obs_ch1, obs_ch23 = self.infomin.R_GB_to_frame_stacked_R_GB(
+            obs_R=obs_ch1, obs_GB=obs_ch23
+        )
+        logits = self.infomin.compute_logits(anchor=obs_ch1, pos=obs_ch23)
+        labels = torch.arange(logits.shape[0]).long().to(self.device)
+        loss = self.cross_entropy_loss(logits, labels)
+
+        self.infomin_encoders_optimizer.zero_grad()
+        (-loss).backward(retain_graph=True)
+        self.infomin_encoders_optimizer.step()
+
+        self.infomin_discrim_optimizer.zero_grad()
+        loss.backward()
+        self.infomin_discrim_optimizer.step()
+
+        if step % self.log_interval == 0:
+            L.log("train/NCE_loss", loss, step)
+
     def update_cpc(self, obs_anchor, obs_pos, L, step):
         # time flips
         """
@@ -643,6 +767,10 @@ class RadSacAgent(object):
                 not_done,
                 idxs,
             ) = replay_buffer.sample_rad(None, return_idxs=True)
+
+            if self.infomin.is_color_mode:
+                obs_RGB = self.infomin.discriminator_encode(obs=obs)
+                obs = self.infomin.reshape_to_frame_stack(obs=obs_RGB).detach()
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                 self.augs_funcs,
@@ -670,12 +798,13 @@ class RadSacAgent(object):
                 self.critic.encoder, self.critic_target.encoder, self.encoder_tau
             )
 
-        if (
-            any(word in self.mode for word in [INFO_MIN, CURL_SAC])
-            and step % self.cpc_update_freq == 0
-        ):
-            obs_pos = self.get_augs_obs_pos(replay_buffer=replay_buffer, idxs=idxs)
-            self.update_cpc(obs_anchor=obs, obs_pos=obs_pos, L=L, step=step)
+        if step % self.cpc_update_freq == 0:
+            if CURL_SAC in self.mode:
+                obs_pos = self.get_augs_obs_pos(replay_buffer=replay_buffer, idxs=idxs)
+                self.update_cpc(obs_anchor=obs, obs_pos=obs_pos, L=L, step=step)
+            elif INFO_MIN in self.mode:
+                if self.infomin.is_color_mode:
+                    self.update_info_min(obs_RGB=obs_RGB, L=L, step=step)
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
