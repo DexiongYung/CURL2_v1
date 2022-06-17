@@ -695,12 +695,48 @@ class RadSacAgent(object):
         critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
             current_Q2, target_Q
         )
+
         if step % self.log_interval == 0:
             L.log("train_critic/loss", critic_loss, step)
 
-        self.critic_optimizer.zero_grad()
-        critic_loss.backward()
-        self.critic_optimizer.step()
+        if INFO_MIN in self.mode and self.infomin.color_mode:
+            obs_RGB = self.infomin.reshape_to_RGB(obs=obs)
+            obs_ch1, obs_ch23 = self.infomin.split_RGB_into_R_GB(obs=obs_RGB)
+            obs_ch1, obs_ch23 = self.infomin.R_GB_to_frame_stacked_R_GB(
+                obs_R=obs_ch1, obs_GB=obs_ch23
+            )
+            logits = self.infomin.compute_logits(anchor=obs_ch1, pos=obs_ch23)
+            labels = torch.arange(logits.shape[0]).long().to(self.device)
+            loss = self.cross_entropy_loss(logits, labels)
+            weight = (loss / critic_loss).detach()
+            loss = loss * weight + critic_loss
+
+            self.infomin_W_optimizer.zero_grad()
+            self.infomin_discrim_optimizer.zero_grad()
+            self.infomin_value_estimators_optimizer.zero_grad()
+            self.critic_optimizer.zero_grad()
+            loss.backward()
+            self.infomin_discrim_optimizer.step()
+            self.infomin_W_optimizer.step()
+            self.infomin_value_estimators_optimizer.step()
+            self.critic_optimizer.step()
+
+            logits = self.infomin.compute_logits(
+                anchor=obs_ch1.detach(), pos=obs_ch23.detach()
+            )
+            CE_loss = self.cross_entropy_loss(logits, labels)
+
+            self.infomin_encoders_optimizer.zero_grad()
+            (-CE_loss * weight).backward()
+            self.infomin_encoders_optimizer.step()
+
+            if step % self.log_interval == 0:
+                L.log("train/NCE_max_loss", -CE_loss * weight, step)
+                L.log("train/NCE_min_loss", loss, step)
+        else:
+            self.critic_optimizer.zero_grad()
+            critic_loss.backward()
+            self.critic_optimizer.step()
 
         # TODD!!!
         # self.critic.log(L, step)
@@ -850,9 +886,7 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log("train/batch_reward", reward.mean(), step)
 
-        self.update_critic(
-            obs.detach(), action, reward, next_obs.detach(), not_done, L, step
-        )
+        self.update_critic(obs, action, reward, next_obs.detach(), not_done, L, step)
 
         if step % self.actor_update_freq == 0:
             aug_obs = None
@@ -877,9 +911,9 @@ class RadSacAgent(object):
             if CURL_SAC in self.mode:
                 obs_pos = self.get_augs_obs_pos(replay_buffer=replay_buffer, idxs=idxs)
                 self.update_cpc(obs_anchor=obs, obs_pos=obs_pos, L=L, step=step)
-            elif INFO_MIN in self.mode:
-                if self.infomin.color_mode:
-                    self.update_info_min(obs=obs, L=L, step=step)
+            # elif INFO_MIN in self.mode:
+            #     if self.infomin.color_mode:
+            #         self.update_info_min(obs=obs, L=L, step=step)
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
