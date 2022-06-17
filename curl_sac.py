@@ -615,9 +615,7 @@ class RadSacAgent(object):
             obs = obs.unsqueeze(0)
 
             if INFO_MIN in self.mode:
-                obs = self.infomin.discriminator_encode(
-                    obs=obs
-                )
+                obs = self.infomin.discriminator_encode(obs=obs)
 
             mu, pi, _, _ = self.actor(obs, compute_log_pi=False)
             return pi.cpu().data.numpy().flatten()
@@ -675,10 +673,10 @@ class RadSacAgent(object):
             L.log("train_critic/loss", critic_loss, step)
 
         if INFO_MIN in self.mode and self.infomin.color_mode:
-            obs_RGB = self.infomin.reshape_to_RGB(obs=obs)
-            obs_ch1, obs_ch23 = self.infomin.split_RGB_into_R_GB(obs=obs_RGB)
-            obs_ch1, obs_ch23 = self.infomin.R_GB_to_frame_stacked_R_GB(
-                obs_R=obs_ch1, obs_GB=obs_ch23
+            obs_RGB = reshape_to_RGB(obs=obs)
+            obs_ch1, obs_ch23 = split_RGB_into_R_GB(obs=obs_RGB)
+            obs_ch1, obs_ch23 = R_GB_to_frame_stacked_R_GB(
+                obs_R=obs_ch1, obs_GB=obs_ch23, num_imgs=int(obs.shape[1] / 3)
             )
             logits = self.infomin.compute_logits(anchor=obs_ch1, pos=obs_ch23)
             labels = torch.arange(logits.shape[0]).long().to(self.device)
