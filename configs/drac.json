@@ -43,6 +43,7 @@
     "save_config": true,
     "seed": 23,
     "mode": "drac-ucb",
+    "drac_alpha": 1,
     "task_name": "swingup",
     "work_dir": "./logs",
     "device_id": 0
