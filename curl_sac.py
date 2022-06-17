@@ -357,7 +357,9 @@ class RadSacAgent(object):
 
         if mode == "tune":
             assert self.data_augs in self.aug_func_params
-            samples = np.random.choice(self.aug_func_params[self.data_augs], size=4, replace=False)
+            samples = np.random.choice(
+                self.aug_func_params[self.data_augs], size=4, replace=False
+            )
 
             for sample in samples:
                 self.augs_funcs[f"{self.data_augs}/{str(sample)}"] = dict(
@@ -611,7 +613,8 @@ class RadSacAgent(object):
                 best_loss = critic_loss
                 best_key = key
 
-        for key, aug_dict in self.augs_funcs.items():
+        augs_funcs_cp = self.augs_funcs.copy()
+        for key, aug_dict in augs_funcs_cp:
             if key == best_key:
                 aug_dict["score"] = 0
             else:
