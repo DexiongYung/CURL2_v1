@@ -719,7 +719,7 @@ class RadSacAgent(object):
         # TODD!!!
         # self.critic.log(L, step)
 
-    def update_actor_and_alpha(self, obs, L, step, aug_obs):
+    def update_actor_and_alpha(self, obs, L, step):
         # detach encoder, so we don't update it with the actor loss
         mu, pi, log_pi, log_std = self.actor(obs, detach_encoder=True)
         actor_Q1, actor_Q2 = self.critic(obs, pi, detach_encoder=True)
@@ -735,29 +735,6 @@ class RadSacAgent(object):
         )
         if step % self.log_interval == 0:
             L.log("train_actor/entropy", entropy.mean(), step)
-
-        if DRAC in self.mode and aug_obs is not None:
-            aug_mu, aug_pi, aug_log_pi, aug_log_std = self.actor(
-                aug_obs, detach_encoder=True
-            )
-            aug_actor_Q1, aug_actor_Q2 = self.critic(
-                aug_obs, aug_pi, detach_encoder=True
-            )
-
-            V = (torch.min(actor_Q1, actor_Q2) - self.alpha.detach() * log_pi).detach()
-            aug_V = (
-                torch.min(aug_actor_Q1, aug_actor_Q2) - self.alpha.detach() * aug_log_pi
-            )
-            policy_reg = F.kl_div(
-                torch.normal(mu, log_std.exp()).detach(),
-                torch.normal(aug_mu, aug_log_std.exp()),
-            )
-            value_reg = F.mse_loss(V, aug_V)
-            actor_loss += self.drac_alpha * (value_reg + policy_reg)
-
-            if step % self.log_interval == 0:
-                L.log("train_actor/policy_regularization", policy_reg, step)
-                L.log("train_actor/value_regularization", value_reg, step)
 
         # optimize the actor
         self.actor_optimizer.zero_grad()
@@ -817,6 +794,31 @@ class RadSacAgent(object):
             L.log("train/NCE_max_loss", CE_loss, step)
             L.log("train/NCE_min_loss", loss, step)
 
+    def update_DrAC(self, obs, aug_obs, L, step):
+        mu, pi, log_pi, log_std = self.actor(obs)
+        actor_Q1, actor_Q2 = self.critic(obs, pi)
+        aug_mu, aug_pi, aug_log_pi, aug_log_std = self.actor(aug_obs)
+        aug_actor_Q1, aug_actor_Q2 = self.critic(aug_obs, aug_pi)
+
+        V = (torch.min(actor_Q1, actor_Q2) - self.alpha.detach() * log_pi).detach()
+        aug_V = torch.min(aug_actor_Q1, aug_actor_Q2) - self.alpha.detach() * aug_log_pi
+        policy_reg = F.kl_div(
+            torch.normal(mu, log_std.exp()).detach(),
+            torch.normal(aug_mu, aug_log_std.exp()),
+        )
+        value_reg = F.mse_loss(V, aug_V)
+        loss = self.drac_alpha * (value_reg + policy_reg)
+
+        self.actor_optimizer.zero_grad()
+        self.critic_optimizer.zero_grad()
+        loss.backward()
+        self.actor_optimizer.step()
+        self.critic_optimizer.step()
+
+        if step % self.log_interval == 0:
+            L.log("train_actor/policy_regularization", policy_reg, step)
+            L.log("train_actor/value_regularization", value_reg, step)
+
     def update_cpc(self, obs_anchor, obs_pos, L, step):
         # time flips
         """
@@ -867,12 +869,7 @@ class RadSacAgent(object):
         self.update_critic(obs, action, reward, next_obs.detach(), not_done, L, step)
 
         if step % self.actor_update_freq == 0:
-            aug_obs = None
-            if DRAC in self.mode:
-                aug_obs = self.get_augs_obs_pos(replay_buffer=replay_buffer, idxs=idxs)
-            self.update_actor_and_alpha(
-                obs=obs.detach(), L=L, step=step, aug_obs=aug_obs
-            )
+            self.update_actor_and_alpha(obs=obs.detach(), L=L, step=step)
 
         if step % self.critic_target_update_freq == 0:
             utils.soft_update_params(
@@ -886,9 +883,11 @@ class RadSacAgent(object):
             )
 
         if step % self.cpc_update_freq == 0:
+            aug_obs = self.get_augs_obs_pos(replay_buffer=replay_buffer, idxs=idxs)
             if CURL_SAC in self.mode:
-                obs_pos = self.get_augs_obs_pos(replay_buffer=replay_buffer, idxs=idxs)
-                self.update_cpc(obs_anchor=obs, obs_pos=obs_pos, L=L, step=step)
+                self.update_cpc(obs_anchor=obs, obs_pos=aug_obs, L=L, step=step)
+            elif DRAC in self.mode:
+                self.update_DrAC(obs=obs, aug_obs=aug_obs, L=L, step=step)
             # elif INFO_MIN in self.mode:
             #     if self.infomin.color_mode:
             #         self.update_info_min(obs=obs, L=L, step=step)
