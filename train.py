@@ -234,10 +234,11 @@ def main():
         frame_skip=args.action_repeat,
     )
 
+    # Eval should be same seed because that's what original code used
     eval_env = dmc2gym.make(
         domain_name=args.domain_name,
         task_name=args.task_name,
-        seed=args.seed + 1,
+        seed=args.seed,
         visualize_reward=False,
         from_pixels=(args.encoder_type == "pixel"),
         height=pre_transform_image_size,
@@ -246,7 +247,7 @@ def main():
     )
 
     env.seed(args.seed)
-    eval_env.seed(args.seed + 1)
+    eval_env.seed(args.seed)
 
     # stack several consecutive frames together
     if args.encoder_type == "pixel":
