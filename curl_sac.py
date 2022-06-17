@@ -280,10 +280,12 @@ class InfoMin(nn.Module):
     def __init__(
         self,
         obs_shape,
+        action_shape,
         encoder_type,
+        encoder_feature_dim,
         hidden_dim,
-        num_layers,
         num_filters,
+        num_layers,
         color_mode,
     ):
         super(InfoMin, self).__init__()
@@ -292,39 +294,43 @@ class InfoMin(nn.Module):
         self.image_size = obs_shape[-1]
         self.num_imgs = int(self.frame_stack_sz / 3)
         if self.color_mode:
-            obs_shape_1 = self.num_imgs
-            obs_shape_2 = 2 * self.num_imgs
+            obs_shape_1 = (self.num_imgs, self.image_size, self.image_size)
+            obs_shape_2 = (2 * self.num_imgs, self.image_size, self.image_size)
         else:
-            obs_shape_1 = obs_shape_2 = self.frame_stack_sz
+            obs_shape_1 = obs_shape_2 = obs_shape
 
         self.adversarial_encoder_anchor = make_encoder(
             encoder_type=encoder_type,
-            obs_shape=(obs_shape_1, self.image_size, self.image_size),
-            feature_dim=hidden_dim,
+            obs_shape=obs_shape_1,
+            feature_dim=encoder_feature_dim,
             num_layers=num_layers,
             num_filters=num_filters,
         )
 
         self.adversarial_encoder_pos = make_encoder(
             encoder_type=encoder_type,
-            obs_shape=(obs_shape_2, self.image_size, self.image_size),
-            feature_dim=hidden_dim,
+            obs_shape=obs_shape_2,
+            feature_dim=encoder_feature_dim,
             num_layers=num_layers,
             num_filters=num_filters,
         )
 
-        self.hidden_enc_anchor = make_encoder(
+        self.critic_ch1 = Critic(
+            obs_shape=obs_shape_1,
+            action_shape=action_shape,
+            hidden_dim=hidden_dim,
             encoder_type=encoder_type,
-            obs_shape=(obs_shape_1, self.image_size, self.image_size),
-            feature_dim=hidden_dim,
+            encoder_feature_dim=encoder_feature_dim,
             num_layers=num_layers,
             num_filters=num_filters,
         )
 
-        self.hidden_enc_pos = make_encoder(
+        self.critic_ch23 = Critic(
+            obs_shape=obs_shape_2,
+            action_shape=action_shape,
+            hidden_dim=hidden_dim,
             encoder_type=encoder_type,
-            obs_shape=(obs_shape_2, self.image_size, self.image_size),
-            feature_dim=hidden_dim,
+            encoder_feature_dim=encoder_feature_dim,
             num_layers=num_layers,
             num_filters=num_filters,
         )
@@ -334,7 +340,7 @@ class InfoMin(nn.Module):
             out_channels=self.frame_stack_sz,
             kernel_size=1,
         )
-        self.W = nn.Parameter(torch.rand(hidden_dim, hidden_dim))
+        self.W = nn.Parameter(torch.rand(encoder_feature_dim, encoder_feature_dim))
 
     def discriminator_encode(self, obs):
         obs_RGB = reshape_to_RGB(obs=obs)
@@ -551,8 +557,10 @@ class RadSacAgent(object):
 
             self.infomin = InfoMin(
                 obs_shape=obs_shape,
+                action_shape=action_shape,
                 encoder_type=encoder_type,
-                hidden_dim=encoder_feature_dim,
+                encoder_feature_dim=encoder_feature_dim,
+                hidden_dim=hidden_dim,
                 num_filters=num_filters,
                 num_layers=num_layers,
                 color_mode=color_mode,
@@ -564,11 +572,11 @@ class RadSacAgent(object):
             self.infomin_encoders_optimizer = torch.optim.Adam(
                 encoders_params, lr=encoder_lr
             )
-            value_estimators_params = list(
-                self.infomin.hidden_enc_anchor.parameters()
-            ) + list(self.infomin.hidden_enc_pos.parameters())
-            self.infomin_value_estimators_optimizer = torch.optim.Adam(
-                value_estimators_params, lr=encoder_lr
+            critics_params = list(self.infomin.critic_ch1.parameters()) + list(
+                self.infomin.critic_ch23.parameters()
+            )
+            self.infomin_critics_optimizer = torch.optim.Adam(
+                critics_params, lr=encoder_lr
             )
             self.infomin_discrim_optimizer = torch.optim.Adam(
                 self.infomin.discriminator.parameters(), lr=encoder_lr
@@ -670,51 +678,9 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log("train_critic/loss", critic_loss, step)
 
-        if INFO_MIN in self.mode and self.infomin.color_mode:
-            obs_RGB = reshape_to_RGB(obs=obs)
-            obs_ch1, obs_ch23 = split_RGB_into_R_GB(obs=obs_RGB)
-            obs_ch1, obs_ch23 = R_GB_to_frame_stacked_R_GB(
-                obs_R=obs_ch1, obs_GB=obs_ch23, num_imgs=int(obs.shape[1] / 3)
-            )
-            logits = self.infomin.compute_logits(anchor=obs_ch1, pos=obs_ch23)
-            labels = torch.arange(logits.shape[0]).long().to(self.device)
-            loss = self.cross_entropy_loss(logits, labels)
-            scale = 1
-            loss = torch.clip(loss, 0, critic_loss.detach() * scale)
-            loss = loss + critic_loss
-
-            self.infomin_W_optimizer.zero_grad()
-            self.infomin_discrim_optimizer.zero_grad()
-            self.infomin_value_estimators_optimizer.zero_grad()
-            self.critic_optimizer.zero_grad()
-            loss.backward()
-            self.infomin_discrim_optimizer.step()
-            self.infomin_W_optimizer.step()
-            self.infomin_value_estimators_optimizer.step()
-            self.critic_optimizer.step()
-
-            logits = self.infomin.compute_logits(
-                anchor=obs_ch1.detach(), pos=obs_ch23.detach()
-            )
-            CE_loss = self.cross_entropy_loss(logits, labels)
-
-            torch.clip(
-                self.cross_entropy_loss(logits, labels),
-                0,
-                critic_loss.detach(),  # * scale
-            )
-
-            self.infomin_encoders_optimizer.zero_grad()
-            (-1 * CE_loss).backward()
-            self.infomin_encoders_optimizer.step()
-
-            if step % self.log_interval == 0:
-                L.log("train/NCE_max_loss", -CE_loss, step)
-                L.log("train/NCE_min_loss", loss, step)
-        else:
-            self.critic_optimizer.zero_grad()
-            critic_loss.backward()
-            self.critic_optimizer.step()
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic_optimizer.step()
 
         # TODD!!!
         # self.critic.log(L, step)
@@ -752,34 +718,39 @@ class RadSacAgent(object):
         alpha_loss.backward()
         self.log_alpha_optimizer.step()
 
-    def update_info_min(self, obs, L, step):
+    def update_info_min(self, obs, next_obs, action, reward, not_done, L, step):
         with torch.no_grad():
-            critic_hidden = self.critic.encoder(obs)
+            _, policy_action, log_pi, _ = self.actor(next_obs)
+            target_Q1, target_Q2 = self.critic_target(next_obs, policy_action)
+            target_V = torch.min(target_Q1, target_Q2) - self.alpha.detach() * log_pi
+            target_Q = reward + (not_done * self.discount * target_V)
 
         obs_RGB = reshape_to_RGB(obs=obs)
         obs_ch1, obs_ch23 = split_RGB_into_R_GB(obs=obs_RGB)
         obs_ch1, obs_ch23 = R_GB_to_frame_stacked_R_GB(
-            obs_R=obs_ch1, obs_GB=obs_ch23, num_imgs=self.infomin.frame_stack_sz / 3
+            obs_R=obs_ch1,
+            obs_GB=obs_ch23,
+            num_imgs=int(self.infomin.frame_stack_sz / 3),
         )
         logits = self.infomin.compute_logits(anchor=obs_ch1, pos=obs_ch23)
         labels = torch.arange(logits.shape[0]).long().to(self.device)
         loss = self.cross_entropy_loss(logits, labels)
 
-        anchor_hidden = self.infomin.hidden_enc_anchor(obs_ch1)
-        pos_hidden = self.infomin.hidden_enc_pos(obs_ch23)
+        Q1_ch1, Q2_ch1 = self.infomin.critic_ch1(obs_ch1, action)
+        Q1_ch23, Q2_ch23 = self.infomin.critic_ch23(obs_ch23, action)
 
-        anchor_mse = self.MSE_loss(critic_hidden, anchor_hidden)
-        pos_mse = self.MSE_loss(critic_hidden, pos_hidden)
+        anchor_mse = self.MSE_loss(Q1_ch1, target_Q) + self.MSE_loss(Q2_ch1, target_Q)
+        pos_mse = self.MSE_loss(Q1_ch23, target_Q) + self.MSE_loss(Q2_ch23, target_Q)
 
         loss = loss + anchor_mse + pos_mse
 
         self.infomin_W_optimizer.zero_grad()
         self.infomin_discrim_optimizer.zero_grad()
-        self.infomin_value_estimators_optimizer.zero_grad()
+        self.infomin_critics_optimizer.zero_grad()
         loss.backward()
         self.infomin_discrim_optimizer.step()
         self.infomin_W_optimizer.step()
-        self.infomin_value_estimators_optimizer.step()
+        self.infomin_critics_optimizer.step()
 
         logits = self.infomin.compute_logits(
             anchor=obs_ch1.detach(), pos=obs_ch23.detach()
@@ -791,8 +762,9 @@ class RadSacAgent(object):
         self.infomin_encoders_optimizer.step()
 
         if step % self.log_interval == 0:
-            L.log("train/NCE_max_loss", CE_loss, step)
-            L.log("train/NCE_min_loss", loss, step)
+            L.log("train/NCE_loss", loss, step)
+            L.log("train/anchor_MSE_loss", anchor_mse, step)
+            L.log("train/pos_MSE_loss", pos_mse, step)
 
     def update_DrAC(self, obs, aug_obs, L, step):
         mu, pi, log_pi, log_std = self.actor(obs)
@@ -866,7 +838,9 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log("train/batch_reward", reward.mean(), step)
 
-        self.update_critic(obs, action, reward, next_obs.detach(), not_done, L, step)
+        self.update_critic(
+            obs.detach(), action, reward, next_obs.detach(), not_done, L, step
+        )
 
         if step % self.actor_update_freq == 0:
             self.update_actor_and_alpha(obs=obs.detach(), L=L, step=step)
@@ -888,9 +862,17 @@ class RadSacAgent(object):
                 self.update_cpc(obs_anchor=obs, obs_pos=aug_obs, L=L, step=step)
             elif DRAC in self.mode:
                 self.update_DrAC(obs=obs, aug_obs=aug_obs, L=L, step=step)
-            # elif INFO_MIN in self.mode:
-            #     if self.infomin.color_mode:
-            #         self.update_info_min(obs=obs, L=L, step=step)
+            elif INFO_MIN in self.mode:
+                if self.infomin.color_mode:
+                    self.update_info_min(
+                        obs=obs,
+                        action=action,
+                        next_obs=next_obs,
+                        reward=reward,
+                        not_done=not_done,
+                        L=L,
+                        step=step,
+                    )
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
