@@ -614,7 +614,7 @@ class RadSacAgent(object):
                 best_key = key
 
         augs_funcs_cp = self.augs_funcs.copy()
-        for key, aug_dict in augs_funcs_cp:
+        for key, aug_dict in augs_funcs_cp.items():
             if key == best_key:
                 aug_dict["score"] = 0
             else:
