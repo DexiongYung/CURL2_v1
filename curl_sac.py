@@ -239,6 +239,7 @@ class CURL(nn.Module):
 
         self.encoder_target = critic_target.encoder
         self.output_type = output_type
+        self.W = nn.Parameter(torch.rand(z_dim, z_dim), requires_grad=True)
 
     def encode(self, x, detach=False, ema=False):
         """
@@ -267,7 +268,8 @@ class CURL(nn.Module):
         - negatives are all other elements
         - to compute loss use multiclass cross entropy with identity matrix for labels
         """
-        logits = torch.matmul(z_a, z_pos.T)  # (B,B)
+        Wz = torch.matmul(self.W, z_pos.T)  # (z_dim,B)
+        logits = torch.matmul(z_a, Wz)  # (B,B)
         logits = logits - torch.max(logits, 1)[0][:, None]
         return logits
 
@@ -309,7 +311,27 @@ class InfoMin(nn.Module):
             num_filters=num_filters,
         )
 
-        self.discriminator = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=1)
+        self.hidden_enc_anchor = make_encoder(
+            encoder_type=encoder_type,
+            obs_shape=(obs_shape_1, self.image_size, self.image_size),
+            feature_dim=hidden_dim,
+            num_layers=num_layers,
+            num_filters=num_filters,
+        )
+
+        self.hidden_enc_pos = make_encoder(
+            encoder_type=encoder_type,
+            obs_shape=(obs_shape_2, self.image_size, self.image_size),
+            feature_dim=hidden_dim,
+            num_layers=num_layers,
+            num_filters=num_filters,
+        )
+
+        self.discriminator = nn.Conv2d(
+            in_channels=self.frame_stack_sz,
+            out_channels=self.frame_stack_sz,
+            kernel_size=1,
+        )
         self.W = nn.Parameter(torch.rand(hidden_dim, hidden_dim))
 
     def discriminator_encode(self, obs, reshape_to_frame_stack=False):
@@ -318,7 +340,8 @@ class InfoMin(nn.Module):
         if self.color_mode == YDBDR:
             obs_RGB = self.RGB_to_YDbDr(obs_RGB=obs_RGB)
 
-        obs_dis = self.discriminator.forward(obs_RGB)
+        obs_fs = self.reshape_to_frame_stack(obs=obs_RGB)
+        obs_dis = self.discriminator.forward(obs_fs)
 
         if reshape_to_frame_stack:
             return self.reshape_to_frame_stack(obs_dis)
@@ -554,7 +577,7 @@ class RadSacAgent(object):
             self.infomin = InfoMin(
                 obs_shape=obs_shape,
                 encoder_type=encoder_type,
-                hidden_dim=hidden_dim,
+                hidden_dim=encoder_feature_dim,
                 num_filters=num_filters,
                 num_layers=num_layers,
                 color_mode=color_mode,
@@ -566,11 +589,19 @@ class RadSacAgent(object):
             self.infomin_encoders_optimizer = torch.optim.Adam(
                 encoders_params, lr=encoder_lr
             )
+            value_estimators_params = list(
+                self.infomin.hidden_enc_anchor.parameters()
+            ) + list(self.infomin.hidden_enc_pos.parameters())
+            self.infomin_value_estimators_optimizer = torch.optim.Adam(
+                value_estimators_params, lr=encoder_lr
+            )
             self.infomin_discrim_optimizer = torch.optim.Adam(
                 self.infomin.discriminator.parameters(), lr=encoder_lr
             )
+            self.infomin_W_optimizer = torch.optim.Adam([self.infomin.W], lr=encoder_lr)
 
         self.cross_entropy_loss = nn.CrossEntropyLoss()
+        self.MSE_loss = nn.MSELoss()
         self.train()
 
     def train(self, training=True):
@@ -656,52 +687,20 @@ class RadSacAgent(object):
             target_V = torch.min(target_Q1, target_Q2) - self.alpha.detach() * log_pi
             target_Q = reward + (not_done * self.discount * target_V)
 
-        # Optimize the critic
-        if INFO_MIN in self.mode:
-            obs_ch1, obs_ch23 = self.infomin.split_RGB_into_R_GB(obs=obs)
-            obs_ch1, obs_ch23 = self.infomin.R_GB_to_frame_stacked_R_GB(
-                obs_R=obs_ch1, obs_GB=obs_ch23
-            )
-            obs = self.infomin.reshape_to_frame_stack(obs=obs)
+        # get current Q estimates
+        current_Q1, current_Q2 = self.critic(
+            obs, action, detach_encoder=self.detach_encoder
+        )
 
-            logits = self.infomin.compute_logits(anchor=obs_ch1, pos=obs_ch23)
-            labels = torch.arange(logits.shape[0]).long().to(self.device)
-            NCE_loss = self.cross_entropy_loss(logits, labels)
+        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
+            current_Q2, target_Q
+        )
+        if step % self.log_interval == 0:
+            L.log("train_critic/loss", critic_loss, step)
 
-            current_Q1, current_Q2 = self.critic(
-                obs, action, detach_encoder=self.detach_encoder
-            )
-
-            critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
-                current_Q2, target_Q
-            )
-
-            total_loss = 2000 * critic_loss + NCE_loss
-
-            if step % self.log_interval == 0:
-                L.log("train_critic/loss", critic_loss, step)
-                L.log("train_critic/info_min_dis_loss", total_loss, step)
-
-            self.critic_optimizer.zero_grad()
-            self.infomin_discrim_optimizer.zero_grad()
-            total_loss.backward()
-            self.critic_optimizer.step()
-            self.infomin_discrim_optimizer.step()
-        else:
-            # get current Q estimates
-            current_Q1, current_Q2 = self.critic(
-                obs, action, detach_encoder=self.detach_encoder
-            )
-
-            critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
-                current_Q2, target_Q
-            )
-            if step % self.log_interval == 0:
-                L.log("train_critic/loss", critic_loss, step)
-
-            self.critic_optimizer.zero_grad()
-            critic_loss.backward()
-            self.critic_optimizer.step()
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic_optimizer.step()
 
         # TODD!!!
         # self.critic.log(L, step)
@@ -762,30 +761,47 @@ class RadSacAgent(object):
         alpha_loss.backward()
         self.log_alpha_optimizer.step()
 
-    def update_info_min(self, obs_RGB, L, step):
+    def update_info_min(self, obs, L, step):
+        with torch.no_grad():
+            critic_hidden = self.critic.encoder(obs)
+
+        obs_RGB = self.infomin.reshape_to_RGB(obs=obs)
         obs_ch1, obs_ch23 = self.infomin.split_RGB_into_R_GB(obs=obs_RGB)
         obs_ch1, obs_ch23 = self.infomin.R_GB_to_frame_stacked_R_GB(
             obs_R=obs_ch1, obs_GB=obs_ch23
         )
-        # logits = self.infomin.compute_logits(anchor=obs_ch1, pos=obs_ch23)
-        # loss = self.cross_entropy_loss(logits, labels)
+        logits = self.infomin.compute_logits(anchor=obs_ch1, pos=obs_ch23)
+        labels = torch.arange(logits.shape[0]).long().to(self.device)
+        loss = self.cross_entropy_loss(logits, labels)
 
-        # self.infomin_discrim_optimizer.zero_grad()
-        # loss.backward()
-        # self.infomin_discrim_optimizer.step()
+        anchor_hidden = self.infomin.hidden_enc_anchor(obs_ch1)
+        pos_hidden = self.infomin.hidden_enc_pos(obs_ch23)
+
+        anchor_mse = self.MSE_loss(critic_hidden, anchor_hidden)
+        pos_mse = self.MSE_loss(critic_hidden, pos_hidden)
+
+        loss = loss + anchor_mse + pos_mse
+
+        self.infomin_W_optimizer.zero_grad()
+        self.infomin_discrim_optimizer.zero_grad()
+        self.infomin_value_estimators_optimizer.zero_grad()
+        loss.backward()
+        self.infomin_discrim_optimizer.step()
+        self.infomin_W_optimizer.step()
+        self.infomin_value_estimators_optimizer.step()
 
         logits = self.infomin.compute_logits(
             anchor=obs_ch1.detach(), pos=obs_ch23.detach()
         )
-        labels = torch.arange(logits.shape[0]).long().to(self.device)
-        loss = self.cross_entropy_loss(logits, labels)
+        CE_loss = self.cross_entropy_loss(logits, labels)
 
         self.infomin_encoders_optimizer.zero_grad()
-        (-loss).backward()
+        (-CE_loss).backward()
         self.infomin_encoders_optimizer.step()
 
         if step % self.log_interval == 0:
-            L.log("train/NCE_loss", loss, step)
+            L.log("train/NCE_max_loss", CE_loss, step)
+            L.log("train/NCE_min_loss", loss, step)
 
     def update_cpc(self, obs_anchor, obs_pos, L, step):
         # time flips
@@ -824,8 +840,8 @@ class RadSacAgent(object):
             ) = replay_buffer.sample_rad(None, return_idxs=True)
 
             if INFO_MIN in self.mode and self.infomin.color_mode:
-                obs_RGB = self.infomin.discriminator_encode(obs=obs)
-                obs = self.infomin.reshape_to_frame_stack(obs=obs_RGB).detach()
+                obs = self.infomin.discriminator_encode(obs=obs)
+                next_obs = self.infomin.discriminator_encode(obs=next_obs)
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                 self.augs_funcs,
@@ -834,16 +850,17 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log("train/batch_reward", reward.mean(), step)
 
-        if INFO_MIN in self.mode and self.infomin.color_mode:
-            self.update_critic(obs_RGB, action, reward, next_obs, not_done, L, step)
-        else:
-            self.update_critic(obs, action, reward, next_obs, not_done, L, step)
+        self.update_critic(
+            obs.detach(), action, reward, next_obs.detach(), not_done, L, step
+        )
 
         if step % self.actor_update_freq == 0:
             aug_obs = None
             if DRAC in self.mode:
                 aug_obs = self.get_augs_obs_pos(replay_buffer=replay_buffer, idxs=idxs)
-            self.update_actor_and_alpha(obs=obs, L=L, step=step, aug_obs=aug_obs)
+            self.update_actor_and_alpha(
+                obs=obs.detach(), L=L, step=step, aug_obs=aug_obs
+            )
 
         if step % self.critic_target_update_freq == 0:
             utils.soft_update_params(
@@ -862,7 +879,7 @@ class RadSacAgent(object):
                 self.update_cpc(obs_anchor=obs, obs_pos=obs_pos, L=L, step=step)
             elif INFO_MIN in self.mode:
                 if self.infomin.color_mode:
-                    self.update_info_min(obs_RGB=obs_RGB, L=L, step=step)
+                    self.update_info_min(obs=obs, L=L, step=step)
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
