@@ -599,9 +599,7 @@ class RadSacAgent(object):
             obs = obs.unsqueeze(0)
 
             if INFO_MIN in self.mode:
-                obs = self.infomin.discriminator_encode(
-                    obs=obs, reshape_to_frame_stack=True
-                )
+                obs = self.infomin.discriminator_encode(obs=obs)
 
             mu, _, _, _ = self.actor(obs, compute_pi=False, compute_log_pi=False)
             return mu.cpu().data.numpy().flatten()
