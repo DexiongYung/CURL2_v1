@@ -4,6 +4,7 @@ import kornia
 import torch.nn as nn
 from TransformLayer import ColorJitterLayer
 from utils import center_translates, center_crop_images
+from color_space import reshape_to_frame_stack, reshape_to_RGB, RGB_to_YDbDr
 
 
 def random_crop(imgs, out=84):
@@ -28,6 +29,13 @@ def center_crop_DrAC(imgs, out=116):
     _, _, h, _ = imgs.shape
     imgs = center_translates(image=imgs, size=out)
     return random_crop(imgs=imgs, out=h)
+
+
+def YDbDr(imgs):
+    frame_stack_sz = imgs.shape[1]
+    imgs_rgb = reshape_to_RGB(obs=imgs)
+    imgs_ydbdr = RGB_to_YDbDr(obs_RGB=imgs_rgb)
+    return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
 
 
 def center_random_crop(imgs, out=84):

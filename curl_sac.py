@@ -1,9 +1,11 @@
 from collections import deque
+from json import encoder
 from multiprocessing.sharedctypes import Value
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from color_space import *
 
 import utils
 from encoder import make_encoder
@@ -334,44 +336,16 @@ class InfoMin(nn.Module):
         )
         self.W = nn.Parameter(torch.rand(hidden_dim, hidden_dim))
 
-    def discriminator_encode(self, obs, reshape_to_frame_stack=False):
-        obs_RGB = self.reshape_to_RGB(obs=obs)
+    def discriminator_encode(self, obs):
+        obs_RGB = reshape_to_RGB(obs=obs)
 
         if self.color_mode == YDBDR:
-            obs_RGB = self.RGB_to_YDbDr(obs_RGB=obs_RGB)
+            obs_RGB = RGB_to_YDbDr(obs_RGB=obs_RGB)
 
-        obs_fs = self.reshape_to_frame_stack(obs=obs_RGB)
+        obs_fs = reshape_to_frame_stack(obs=obs_RGB, frame_stack_sz=self.frame_stack_sz)
         obs_dis = self.discriminator.forward(obs_fs)
 
-        if reshape_to_frame_stack:
-            return self.reshape_to_frame_stack(obs_dis)
-        else:
-            return obs_dis
-
-    def reshape_to_RGB(self, obs):
-        return obs.reshape(-1, 3, self.image_size, self.image_size)
-
-    def reshape_to_frame_stack(self, obs):
-        return obs.reshape(-1, self.frame_stack_sz, self.image_size, self.image_size)
-
-    def RGB_to_YDbDr(self, obs_RGB):
-        r = obs_RGB[:, 0]
-        g = obs_RGB[:, 1]
-        b = obs_RGB[:, 2]
-
-        y = 0.299 * r + 0.587 * g + 0.114 * b
-        db = -0.450 * r + -0.883 * g + 1.333 * b
-        dr = -1.333 * r + 1.116 * g + 0.217 * b
-
-        return torch.stack([y, db, dr], -3)
-
-    def split_RGB_into_R_GB(self, obs):
-        return torch.split(tensor=obs, split_size_or_sections=[1, 2], dim=1)
-
-    def R_GB_to_frame_stacked_R_GB(self, obs_R, obs_GB):
-        return obs_R.reshape(
-            -1, self.num_imgs, self.image_size, self.image_size
-        ), obs_GB.reshape(-1, self.num_imgs * 2, self.image_size, self.image_size)
+        return obs_dis
 
     def compute_logits(self, anchor, pos):
         anchor_z = self.adversarial_encoder_anchor(anchor)
@@ -463,6 +437,7 @@ class RadSacAgent(object):
             ),
             "crop_translate": dict(func=rad.crop_translate, params=dict(size=100)),
             "center_crop_drac": dict(func=rad.center_crop_DrAC, params=dict(out=116)),
+            "ydbdr": dict(func=rad.YDbDr, params=dict()),
             "no_aug": dict(func=rad.no_aug, params=dict()),
         }
 
@@ -708,7 +683,8 @@ class RadSacAgent(object):
             logits = self.infomin.compute_logits(anchor=obs_ch1, pos=obs_ch23)
             labels = torch.arange(logits.shape[0]).long().to(self.device)
             loss = self.cross_entropy_loss(logits, labels)
-            loss = torch.clip(loss, 0, critic_loss.detach())
+            scale = 1
+            loss = torch.clip(loss, 0, critic_loss.detach() * scale)
             loss = loss + critic_loss
 
             self.infomin_W_optimizer.zero_grad()
@@ -724,8 +700,12 @@ class RadSacAgent(object):
             logits = self.infomin.compute_logits(
                 anchor=obs_ch1.detach(), pos=obs_ch23.detach()
             )
-            CE_loss = torch.clip(
-                self.cross_entropy_loss(logits, labels), 0, critic_loss.detach()
+            CE_loss = self.cross_entropy_loss(logits, labels)
+
+            torch.clip(
+                self.cross_entropy_loss(logits, labels),
+                0,
+                critic_loss.detach(),  # * scale
             )
 
             self.infomin_encoders_optimizer.zero_grad()
@@ -803,10 +783,10 @@ class RadSacAgent(object):
         with torch.no_grad():
             critic_hidden = self.critic.encoder(obs)
 
-        obs_RGB = self.infomin.reshape_to_RGB(obs=obs)
-        obs_ch1, obs_ch23 = self.infomin.split_RGB_into_R_GB(obs=obs_RGB)
-        obs_ch1, obs_ch23 = self.infomin.R_GB_to_frame_stacked_R_GB(
-            obs_R=obs_ch1, obs_GB=obs_ch23
+        obs_RGB = reshape_to_RGB(obs=obs)
+        obs_ch1, obs_ch23 = split_RGB_into_R_GB(obs=obs_RGB)
+        obs_ch1, obs_ch23 = R_GB_to_frame_stacked_R_GB(
+            obs_R=obs_ch1, obs_GB=obs_ch23, num_imgs=self.infomin.frame_stack_sz / 3
         )
         logits = self.infomin.compute_logits(anchor=obs_ch1, pos=obs_ch23)
         labels = torch.arange(logits.shape[0]).long().to(self.device)
