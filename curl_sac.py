@@ -708,8 +708,8 @@ class RadSacAgent(object):
             logits = self.infomin.compute_logits(anchor=obs_ch1, pos=obs_ch23)
             labels = torch.arange(logits.shape[0]).long().to(self.device)
             loss = self.cross_entropy_loss(logits, labels)
-            weight = (loss / critic_loss).detach()
-            loss = loss * weight + critic_loss
+            loss = torch.clip(loss, 0, critic_loss.detach())
+            loss = loss + critic_loss
 
             self.infomin_W_optimizer.zero_grad()
             self.infomin_discrim_optimizer.zero_grad()
@@ -724,14 +724,16 @@ class RadSacAgent(object):
             logits = self.infomin.compute_logits(
                 anchor=obs_ch1.detach(), pos=obs_ch23.detach()
             )
-            CE_loss = self.cross_entropy_loss(logits, labels)
+            CE_loss = torch.clip(
+                self.cross_entropy_loss(logits, labels), 0, critic_loss.detach()
+            )
 
             self.infomin_encoders_optimizer.zero_grad()
-            (-CE_loss * weight).backward()
+            (-1 * CE_loss).backward()
             self.infomin_encoders_optimizer.step()
 
             if step % self.log_interval == 0:
-                L.log("train/NCE_max_loss", -CE_loss * weight, step)
+                L.log("train/NCE_max_loss", -CE_loss, step)
                 L.log("train/NCE_min_loss", loss, step)
         else:
             self.critic_optimizer.zero_grad()
