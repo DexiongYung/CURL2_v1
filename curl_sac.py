@@ -616,7 +616,7 @@ class RadSacAgent(object):
 
             if INFO_MIN in self.mode:
                 obs = self.infomin.discriminator_encode(
-                    obs=obs, reshape_to_frame_stack=True
+                    obs=obs
                 )
 
             mu, pi, _, _ = self.actor(obs, compute_log_pi=False)
