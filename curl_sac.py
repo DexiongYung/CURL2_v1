@@ -898,3 +898,519 @@ class RadSacAgent(object):
     def load(self, model_dir, step):
         self.actor.load_state_dict(torch.load("%s/actor_%s.pt" % (model_dir, step)))
         self.critic.load_state_dict(torch.load("%s/critic_%s.pt" % (model_dir, step)))
+
+
+class InfoMinSACAgent(object):
+    """RAD with SAC."""
+
+    def __init__(
+        self,
+        obs_shape,
+        action_shape,
+        device,
+        hidden_dim=256,
+        discount=0.99,
+        init_temperature=0.1,
+        alpha_lr=1e-4,
+        alpha_beta=0.9,
+        actor_lr=1e-3,
+        actor_beta=0.9,
+        actor_log_std_min=-10,
+        actor_log_std_max=2,
+        actor_update_freq=2,
+        critic_lr=1e-3,
+        critic_beta=0.9,
+        critic_tau=0.005,
+        critic_target_update_freq=2,
+        encoder_type="pixel",
+        encoder_feature_dim=50,
+        encoder_lr=1e-3,
+        encoder_tau=0.05,
+        num_layers=4,
+        num_filters=32,
+        cpc_update_freq=1,
+        log_interval=100,
+        detach_encoder=False,
+        latent_dim=128,
+        data_augs="",
+        mode=None,
+        ucb_explore_coef=None,
+        ucb_max_len=None,
+        drac_alpha=None,
+    ):
+        self.device = device
+        self.discount = discount
+        self.critic_tau = critic_tau
+        self.encoder_tau = encoder_tau
+        self.actor_update_freq = actor_update_freq
+        self.critic_target_update_freq = critic_target_update_freq
+        self.cpc_update_freq = cpc_update_freq
+        self.log_interval = log_interval
+        self.image_size = obs_shape[-1]
+        self.latent_dim = latent_dim
+        self.detach_encoder = detach_encoder
+        self.encoder_type = encoder_type
+        self.data_augs = data_augs
+        self.mode = mode
+
+        self.augs_funcs = {}
+        for aug_name in self.data_augs.split("-"):
+            assert aug_name in AUG_TO_FUNC, "invalid data aug string"
+            self.augs_funcs[aug_name] = AUG_TO_FUNC[aug_name]
+
+        print(f"Aug set: {self.augs_funcs}")
+        print(f"SAC Agent mode is: {self.mode}")
+
+        if DRAC in self.mode:
+            self.drac_alpha = drac_alpha
+            print(f"DrAC on and alpha is: {self.drac_alpha}")
+
+        if UCB in self.mode:
+            self.ucb_explore_coef = ucb_explore_coef
+            self.ucb_max_len = ucb_max_len
+            self.ucb_step = 0
+            self.last_aug = None
+            self.ucb_dict = dict()
+
+            for key, _ in self.augs_funcs.items():
+                self.ucb_dict[key] = dict(
+                    count=1, ep_reward_list=deque([0], maxlen=self.ucb_max_len)
+                )
+
+            print(
+                "UCB is on with params: \n"
+                + f"explore coefficient: {self.ucb_explore_coef}\n"
+                + f"explore max len: {self.ucb_max_len}"
+            )
+
+        self.actor = Actor(
+            obs_shape,
+            action_shape,
+            hidden_dim,
+            encoder_type,
+            encoder_feature_dim,
+            actor_log_std_min,
+            actor_log_std_max,
+            num_layers,
+            num_filters,
+        ).to(device)
+
+        self.critic = Critic(
+            obs_shape,
+            action_shape,
+            hidden_dim,
+            encoder_type,
+            encoder_feature_dim,
+            num_layers,
+            num_filters,
+        ).to(device)
+
+        self.critic_target = Critic(
+            obs_shape,
+            action_shape,
+            hidden_dim,
+            encoder_type,
+            encoder_feature_dim,
+            num_layers,
+            num_filters,
+        ).to(device)
+
+        self.critic_target.load_state_dict(self.critic.state_dict())
+
+        # tie encoders between actor and critic, and CURL and critic
+        self.actor.encoder.copy_conv_weights_from(self.critic.encoder)
+
+        self.log_alpha = torch.tensor(np.log(init_temperature)).to(device)
+        self.log_alpha.requires_grad = True
+        # set target entropy to -|A|
+        self.target_entropy = -np.prod(action_shape)
+
+        # optimizers
+        self.actor_optimizer = torch.optim.Adam(
+            self.actor.parameters(), lr=actor_lr, betas=(actor_beta, 0.999)
+        )
+
+        self.critic_optimizer = torch.optim.Adam(
+            self.critic.parameters(), lr=critic_lr, betas=(critic_beta, 0.999)
+        )
+
+        self.log_alpha_optimizer = torch.optim.Adam(
+            [self.log_alpha], lr=alpha_lr, betas=(alpha_beta, 0.999)
+        )
+
+        if CURL_SAC in self.mode:
+            # create CURL encoder (the 128 batch size is probably unnecessary)
+            self.CURL = CURL(
+                obs_shape,
+                encoder_feature_dim,
+                self.latent_dim,
+                self.critic,
+                self.critic_target,
+                output_type="continuous",
+            ).to(self.device)
+
+            # optimizer for critic encoder for reconstruction loss
+            self.encoder_optimizer = torch.optim.Adam(
+                self.critic.encoder.parameters(), lr=encoder_lr
+            )
+
+            self.cpc_optimizer = torch.optim.Adam(self.CURL.parameters(), lr=encoder_lr)
+        elif INFO_MIN in self.mode:
+            color_mode = None
+            for word in self.mode.split("-"):
+                if word in COLOR_MODES_LIST:
+                    color_mode = word
+
+            self.infomin = InfoMin(
+                obs_shape=obs_shape,
+                encoder_type=encoder_type,
+                hidden_dim=encoder_feature_dim,
+                num_filters=num_filters,
+                num_layers=num_layers,
+                color_mode=color_mode,
+            ).to(self.device)
+
+            encoders_params = list(
+                self.infomin.adversarial_encoder_anchor.parameters()
+            ) + list(self.infomin.adversarial_encoder_pos.parameters())
+            self.infomin_encoders_optimizer = torch.optim.Adam(
+                encoders_params, lr=encoder_lr
+            )
+            value_estimators_params = list(
+                self.infomin.hidden_enc_anchor.parameters()
+            ) + list(self.infomin.hidden_enc_pos.parameters())
+            self.infomin_value_estimators_optimizer = torch.optim.Adam(
+                value_estimators_params, lr=encoder_lr
+            )
+            self.infomin_discrim_optimizer = torch.optim.Adam(
+                self.infomin.discriminator.parameters(), lr=encoder_lr
+            )
+            self.infomin_W_optimizer = torch.optim.Adam([self.infomin.W], lr=encoder_lr)
+
+        self.cross_entropy_loss = nn.CrossEntropyLoss()
+        self.MSE_loss = nn.MSELoss()
+        self.train()
+
+    def train(self, training=True):
+        self.critic_target.train()
+        self.training = training
+        self.actor.train(training)
+        self.critic.train(training)
+        if CURL_SAC in self.mode:
+            self.CURL.train(training)
+        elif INFO_MIN in self.mode:
+            self.infomin.train(training)
+
+    @property
+    def alpha(self):
+        return self.log_alpha.exp()
+
+    def select_action(self, obs):
+        with torch.no_grad():
+            obs = torch.FloatTensor(obs).to(self.device)
+            obs = obs.unsqueeze(0)
+
+            if INFO_MIN in self.mode:
+                obs = self.infomin.discriminator_encode(obs=obs)
+
+            mu, _, _, _ = self.actor(obs, compute_pi=False, compute_log_pi=False)
+            return mu.cpu().data.numpy().flatten()
+
+    def sample_action(self, obs):
+        if obs.shape[-1] != self.image_size:
+            obs = utils.center_crop_image(obs, self.image_size)
+
+        with torch.no_grad():
+            obs = torch.FloatTensor(obs).to(self.device)
+            obs = obs.unsqueeze(0)
+
+            if INFO_MIN in self.mode:
+                obs = self.infomin.discriminator_encode(obs=obs)
+
+            mu, pi, _, _ = self.actor(obs, compute_log_pi=False)
+            return pi.cpu().data.numpy().flatten()
+
+    def ucb_select_aug(self):
+        self.ucb_step += 1
+        best_key = None
+        best_score = float("-inf")
+
+        for key, value in self.ucb_dict.items():
+            count = value["count"]
+            reward_list = value["ep_reward_list"]
+            curr_score = np.mean(reward_list) + self.ucb_explore_coef * np.sqrt(
+                np.log(self.ucb_step) / count
+            )
+
+            if best_score < curr_score:
+                best_score = curr_score
+                best_key = key
+
+        self.last_aug = best_key
+
+    def ucb_update_values(self, eval_reward: float):
+        self.ucb_dict[self.last_aug]["ep_reward_list"].append(eval_reward)
+        self.ucb_dict[self.last_aug]["count"] += 1
+
+    def get_augs_obs_pos(self, replay_buffer, idxs):
+        if UCB in self.mode:
+            self.ucb_select_aug()
+            aug_obs, _, _, _, _ = replay_buffer.sample_rad(
+                {self.last_aug: self.augs_funcs[self.last_aug]}, idxs=idxs
+            )
+        else:
+            aug_obs, _, _, _, _ = replay_buffer.sample_rad(self.augs_funcs, idxs=idxs)
+
+        return aug_obs
+
+    def update_critic(self, obs, action, reward, next_obs, not_done, L, step):
+        with torch.no_grad():
+            _, policy_action, log_pi, _ = self.actor(next_obs)
+            target_Q1, target_Q2 = self.critic_target(next_obs, policy_action)
+            target_V = torch.min(target_Q1, target_Q2) - self.alpha.detach() * log_pi
+            target_Q = reward + (not_done * self.discount * target_V)
+
+        # get current Q estimates
+        current_Q1, current_Q2 = self.critic(
+            obs, action, detach_encoder=self.detach_encoder
+        )
+
+        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
+            current_Q2, target_Q
+        )
+
+        if step % self.log_interval == 0:
+            L.log("train_critic/loss", critic_loss, step)
+
+        if INFO_MIN in self.mode and self.infomin.color_mode:
+            obs_RGB = reshape_to_RGB(obs=obs)
+            obs_ch1, obs_ch23 = split_RGB_into_R_GB(obs=obs_RGB)
+            obs_ch1, obs_ch23 = R_GB_to_frame_stacked_R_GB(
+                obs_R=obs_ch1, obs_GB=obs_ch23, num_imgs=int(obs.shape[1] / 3)
+            )
+            logits = self.infomin.compute_logits(anchor=obs_ch1, pos=obs_ch23)
+            labels = torch.arange(logits.shape[0]).long().to(self.device)
+            loss = self.cross_entropy_loss(logits, labels)
+            scale = 1
+            loss = torch.clip(loss, 0, critic_loss.detach() * scale)
+            loss = loss + critic_loss
+
+            self.infomin_W_optimizer.zero_grad()
+            self.infomin_discrim_optimizer.zero_grad()
+            self.infomin_value_estimators_optimizer.zero_grad()
+            self.critic_optimizer.zero_grad()
+            loss.backward()
+            self.infomin_discrim_optimizer.step()
+            self.infomin_W_optimizer.step()
+            self.infomin_value_estimators_optimizer.step()
+            self.critic_optimizer.step()
+
+            logits = self.infomin.compute_logits(
+                anchor=obs_ch1.detach(), pos=obs_ch23.detach()
+            )
+            CE_loss = self.cross_entropy_loss(logits, labels)
+
+            torch.clip(
+                self.cross_entropy_loss(logits, labels),
+                0,
+                critic_loss.detach(),  # * scale
+            )
+
+            self.infomin_encoders_optimizer.zero_grad()
+            (-1 * CE_loss).backward()
+            self.infomin_encoders_optimizer.step()
+
+            if step % self.log_interval == 0:
+                L.log("train/NCE_max_loss", -CE_loss, step)
+                L.log("train/NCE_min_loss", loss, step)
+        else:
+            self.critic_optimizer.zero_grad()
+            critic_loss.backward()
+            self.critic_optimizer.step()
+
+        # TODD!!!
+        # self.critic.log(L, step)
+
+    def update_actor_and_alpha(self, obs, L, step):
+        # detach encoder, so we don't update it with the actor loss
+        mu, pi, log_pi, log_std = self.actor(obs, detach_encoder=True)
+        actor_Q1, actor_Q2 = self.critic(obs, pi, detach_encoder=True)
+
+        actor_Q = torch.min(actor_Q1, actor_Q2)
+        actor_loss = (self.alpha.detach() * log_pi - actor_Q).mean()
+
+        if step % self.log_interval == 0:
+            L.log("train_actor/loss", actor_loss, step)
+            L.log("train_actor/target_entropy", self.target_entropy, step)
+        entropy = 0.5 * log_std.shape[1] * (1.0 + np.log(2 * np.pi)) + log_std.sum(
+            dim=-1
+        )
+        if step % self.log_interval == 0:
+            L.log("train_actor/entropy", entropy.mean(), step)
+
+        # optimize the actor
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward()
+        self.actor_optimizer.step()
+
+        # TODO!!!
+        # self.actor.log(L, step)
+
+        self.log_alpha_optimizer.zero_grad()
+        alpha_loss = (self.alpha * (-log_pi - self.target_entropy).detach()).mean()
+        if step % self.log_interval == 0:
+            L.log("train_alpha/loss", alpha_loss, step)
+            L.log("train_alpha/value", self.alpha, step)
+        alpha_loss.backward()
+        self.log_alpha_optimizer.step()
+
+    def update_info_min(self, obs, L, step):
+        with torch.no_grad():
+            critic_hidden = self.critic.encoder(obs)
+
+        obs_RGB = reshape_to_RGB(obs=obs)
+        obs_ch1, obs_ch23 = split_RGB_into_R_GB(obs=obs_RGB)
+        obs_ch1, obs_ch23 = R_GB_to_frame_stacked_R_GB(
+            obs_R=obs_ch1, obs_GB=obs_ch23, num_imgs=self.infomin.frame_stack_sz / 3
+        )
+        logits = self.infomin.compute_logits(anchor=obs_ch1, pos=obs_ch23)
+        labels = torch.arange(logits.shape[0]).long().to(self.device)
+        loss = self.cross_entropy_loss(logits, labels)
+
+        anchor_hidden = self.infomin.hidden_enc_anchor(obs_ch1)
+        pos_hidden = self.infomin.hidden_enc_pos(obs_ch23)
+
+        anchor_mse = self.MSE_loss(critic_hidden, anchor_hidden)
+        pos_mse = self.MSE_loss(critic_hidden, pos_hidden)
+
+        loss = loss + anchor_mse + pos_mse
+
+        self.infomin_W_optimizer.zero_grad()
+        self.infomin_discrim_optimizer.zero_grad()
+        self.infomin_value_estimators_optimizer.zero_grad()
+        loss.backward()
+        self.infomin_discrim_optimizer.step()
+        self.infomin_W_optimizer.step()
+        self.infomin_value_estimators_optimizer.step()
+
+        logits = self.infomin.compute_logits(
+            anchor=obs_ch1.detach(), pos=obs_ch23.detach()
+        )
+        CE_loss = self.cross_entropy_loss(logits, labels)
+
+        self.infomin_encoders_optimizer.zero_grad()
+        (-CE_loss).backward()
+        self.infomin_encoders_optimizer.step()
+
+        if step % self.log_interval == 0:
+            L.log("train/NCE_max_loss", CE_loss, step)
+            L.log("train/NCE_min_loss", loss, step)
+
+    def update_DrAC(self, obs, aug_obs, L, step):
+        mu, pi, log_pi, log_std = self.actor(obs)
+        actor_Q1, actor_Q2 = self.critic(obs, pi)
+        aug_mu, aug_pi, aug_log_pi, aug_log_std = self.actor(aug_obs)
+        aug_actor_Q1, aug_actor_Q2 = self.critic(aug_obs, aug_pi)
+
+        V = (torch.min(actor_Q1, actor_Q2) - self.alpha.detach() * log_pi).detach()
+        aug_V = torch.min(aug_actor_Q1, aug_actor_Q2) - self.alpha.detach() * aug_log_pi
+        policy_reg = F.kl_div(
+            torch.normal(mu, log_std.exp()).detach(),
+            torch.normal(aug_mu, aug_log_std.exp()),
+        )
+        value_reg = F.mse_loss(V, aug_V)
+        loss = self.drac_alpha * (value_reg + policy_reg)
+
+        self.actor_optimizer.zero_grad()
+        self.critic_optimizer.zero_grad()
+        loss.backward()
+        self.actor_optimizer.step()
+        self.critic_optimizer.step()
+
+        if step % self.log_interval == 0:
+            L.log("train_actor/policy_regularization", policy_reg, step)
+            L.log("train_actor/value_regularization", value_reg, step)
+
+    def update_cpc(self, obs_anchor, obs_pos, L, step):
+        # time flips
+        """
+        time_pos = cpc_kwargs["time_pos"]
+        time_anchor= cpc_kwargs["time_anchor"]
+        obs_anchor = torch.cat((obs_anchor, time_anchor), 0)
+        obs_pos = torch.cat((obs_anchor, time_pos), 0)
+        """
+        z_a = self.CURL.encode(obs_anchor)
+        z_pos = self.CURL.encode(obs_pos, ema=True)
+
+        logits = self.CURL.compute_logits(z_a, z_pos)
+        labels = torch.arange(logits.shape[0]).long().to(self.device)
+        loss = self.cross_entropy_loss(logits, labels)
+
+        self.encoder_optimizer.zero_grad()
+        self.cpc_optimizer.zero_grad()
+        loss.backward()
+
+        self.encoder_optimizer.step()
+        self.cpc_optimizer.step()
+        if step % self.log_interval == 0:
+            L.log("train/curl_loss", loss, step)
+
+    def update(self, replay_buffer, L, step):
+        self.last_aug = None
+        if any(word in self.mode for word in CONTRAST_ALGS):
+            (
+                obs,
+                action,
+                reward,
+                next_obs,
+                not_done,
+                idxs,
+            ) = replay_buffer.sample_rad(None, return_idxs=True)
+
+            if INFO_MIN in self.mode and self.infomin.color_mode:
+                obs = self.infomin.discriminator_encode(obs=obs)
+                next_obs = self.infomin.discriminator_encode(obs=next_obs)
+        else:
+            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
+                self.augs_funcs,
+            )
+
+        if step % self.log_interval == 0:
+            L.log("train/batch_reward", reward.mean(), step)
+
+        self.update_critic(obs, action, reward, next_obs.detach(), not_done, L, step)
+
+        if step % self.actor_update_freq == 0:
+            self.update_actor_and_alpha(obs=obs.detach(), L=L, step=step)
+
+        if step % self.critic_target_update_freq == 0:
+            utils.soft_update_params(
+                self.critic.Q1, self.critic_target.Q1, self.critic_tau
+            )
+            utils.soft_update_params(
+                self.critic.Q2, self.critic_target.Q2, self.critic_tau
+            )
+            utils.soft_update_params(
+                self.critic.encoder, self.critic_target.encoder, self.encoder_tau
+            )
+
+        if step % self.cpc_update_freq == 0:
+            aug_obs = self.get_augs_obs_pos(replay_buffer=replay_buffer, idxs=idxs)
+            if CURL_SAC in self.mode:
+                self.update_cpc(obs_anchor=obs, obs_pos=aug_obs, L=L, step=step)
+            elif DRAC in self.mode:
+                self.update_DrAC(obs=obs, aug_obs=aug_obs, L=L, step=step)
+            # elif INFO_MIN in self.mode:
+            #     if self.infomin.color_mode:
+            #         self.update_info_min(obs=obs, L=L, step=step)
+
+    def save(self, model_dir, step):
+        torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
+        torch.save(self.critic.state_dict(), "%s/critic_%s.pt" % (model_dir, step))
+
+    def save_curl(self, model_dir, step):
+        torch.save(self.CURL.state_dict(), "%s/curl_%s.pt" % (model_dir, step))
+
+    def load(self, model_dir, step):
+        self.actor.load_state_dict(torch.load("%s/actor_%s.pt" % (model_dir, step)))
+        self.critic.load_state_dict(torch.load("%s/critic_%s.pt" % (model_dir, step)))
