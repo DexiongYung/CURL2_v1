@@ -10,6 +10,33 @@ import data_augs as rad
 
 LOG_FREQ = 10000
 
+AUG_TO_FUNC = {
+    "crop": dict(func=rad.random_crop, params=dict(out=84)),
+    "grayscale": dict(func=rad.random_grayscale, params=dict(p=0.3)),
+    "cutout": dict(func=rad.random_cutout, params=dict(min_cut=10, max_cut=30)),
+    "cutout_color": dict(
+        func=rad.random_cutout_color, params=dict(min_cut=10, max_cut=30)
+    ),
+    "flip": dict(func=rad.random_flip, params=dict(p=0.2)),
+    "rotate": dict(func=rad.random_rotation, params=dict(p=0.3)),
+    "rand_conv": dict(func=rad.random_convolution, params=dict()),
+    "color_jitter": dict(
+        func=rad.random_color_jitter,
+        params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5),
+    ),
+    "translate": dict(func=rad.random_translate, params=dict()),
+    "center_crop": dict(func=rad.center_random_crop, params=dict(out=84)),
+    "translate_cc": dict(func=rad.translate_center_crop, params=dict(crop_sz=100)),
+    "kornia_jitter": dict(
+        func=rad.kornia_color_jitter,
+        params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5),
+    ),
+    "in_frame_translate": dict(func=rad.in_frame_translate, params=dict(size=94)),
+    "crop_translate": dict(func=rad.crop_translate, params=dict(size=100)),
+    "center_crop_drac": dict(func=rad.center_crop_DrAC, params=dict(out=116)),
+    "no_aug": dict(func=rad.no_aug, params=dict()),
+}
+
 
 def gaussian_logprob(noise, log_std):
     """Compute Gaussian log probability."""
@@ -313,37 +340,6 @@ class RadSacAgent(object):
         self.prune_interval = prune_interval
         self.mode = mode
 
-        self.aug_to_func = {
-            "crop": dict(func=rad.random_crop, params=dict(out=84)),
-            "grayscale": dict(func=rad.random_grayscale, params=dict(p=0.3)),
-            "cutout": dict(func=rad.random_cutout, params=dict(min_cut=10, max_cut=30)),
-            "cutout_color": dict(
-                func=rad.random_cutout_color, params=dict(min_cut=10, max_cut=30)
-            ),
-            "flip": dict(func=rad.random_flip, params=dict(p=0.2)),
-            "rotate": dict(func=rad.random_rotation, params=dict(p=0.3)),
-            "rand_conv": dict(func=rad.random_convolution, params=dict()),
-            "color_jitter": dict(
-                func=rad.random_color_jitter,
-                params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5),
-            ),
-            "translate": dict(func=rad.random_translate, params=dict()),
-            "center_crop": dict(func=rad.center_random_crop, params=dict(out=84)),
-            "translate_cc": dict(
-                func=rad.translate_center_crop, params=dict(crop_sz=100)
-            ),
-            "kornia_jitter": dict(
-                func=rad.kornia_color_jitter,
-                params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5),
-            ),
-            "in_frame_translate": dict(
-                func=rad.in_frame_translate, params=dict(size=94)
-            ),
-            "crop_translate": dict(func=rad.crop_translate, params=dict(size=100)),
-            "center_crop_drac": dict(func=rad.center_crop_DrAC, params=dict(out=116)),
-            "no_aug": dict(func=rad.no_aug, params=dict()),
-        }
-
         self.aug_func_params = {
             "center_crop": [dict(out=self.image_size - i * 2) for i in range(20)],
             "translate_cc": [dict(crop_sz=self.image_size - i * 2) for i in range(20)],
@@ -363,15 +359,15 @@ class RadSacAgent(object):
 
             for sample in samples:
                 self.augs_funcs[f"{self.data_augs}/{str(sample)}"] = dict(
-                    func=self.aug_to_func[self.data_augs]["func"],
+                    func=AUG_TO_FUNC[self.data_augs]["func"],
                     params=sample,
                     score=0,
                 )
                 self.aug_func_params[self.data_augs].remove(sample)
         else:
             for aug_name in self.data_augs.split("-"):
-                assert aug_name in self.aug_to_func, "invalid data aug string"
-                self.augs_funcs[aug_name] = self.aug_to_func[aug_name]
+                assert aug_name in AUG_TO_FUNC, "invalid data aug string"
+                self.augs_funcs[aug_name] = AUG_TO_FUNC[aug_name]
 
         print(f"Aug set: {self.augs_funcs}")
 
@@ -581,7 +577,7 @@ class RadSacAgent(object):
             param = aug_dict["params"]
             func_dict = {
                 self.data_augs: dict(
-                    func=self.aug_to_func[self.data_augs]["func"], params=param
+                    func=AUG_TO_FUNC[self.data_augs]["func"], params=param
                 )
             }
 
@@ -614,7 +610,7 @@ class RadSacAgent(object):
                 best_key = key
 
         augs_funcs_cp = self.augs_funcs.copy()
-        for key, aug_dict in augs_funcs_cp:
+        for key, aug_dict in augs_funcs_cp.items():
             if key == best_key:
                 aug_dict["score"] = 0
             else:
@@ -624,7 +620,7 @@ class RadSacAgent(object):
                 del self.augs_funcs[key]
                 new_param = random.sample(self.aug_func_params[self.data_augs], 1)[0]
                 self.augs_funcs[f"{self.data_augs}/{str(new_param)}"] = dict(
-                    func=self.aug_to_func[self.data_augs]["func"],
+                    func=AUG_TO_FUNC[self.data_augs]["func"],
                     params=new_param,
                     score=0,
                 )
