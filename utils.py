@@ -146,22 +146,23 @@ class ReplayBuffer(Dataset):
 
         return obses, actions, rewards, next_obses, not_dones, cpc_kwargs
 
-    def sample_rad(self, aug_funcs):
+    def sample_rad(self, aug_funcs, idxs=None, return_idxs=False):
 
         # augs specified as flags
         # curl_sac organizes flags into aug funcs
         # passes aug funcs into sampler
 
-        idxs = np.random.randint(
-            0, self.capacity if self.full else self.idx, size=self.batch_size
-        )
+        if idxs is None:
+            idxs = np.random.randint(
+                0, self.capacity if self.full else self.idx, size=self.batch_size
+            )
 
         obses = self.obses[idxs]
         next_obses = self.next_obses[idxs]
         if aug_funcs:
             for aug, func_dict in aug_funcs.items():
-                func = func_dict['func']
-                params = func_dict['params']
+                func = func_dict["func"]
+                params = func_dict["params"]
                 # apply crop and cutout first
                 if "crop" in aug or "cutout" in aug:
                     obses = func(obses, **params)
@@ -186,17 +187,20 @@ class ReplayBuffer(Dataset):
         # augmentations go here
         if aug_funcs:
             for aug, func_dict in aug_funcs.items():
-                func = func_dict['func']
-                params = func_dict['params']
+                func = func_dict["func"]
+                params = func_dict["params"]
                 # skip crop and cutout augs
 
                 if "crop" in aug or "cutout" in aug or "translate" in aug:
                     continue
-                
+
                 obses = func(obses, **params)
                 next_obses = func(next_obses, **params)
 
-        return obses, actions, rewards, next_obses, not_dones
+        if return_idxs:
+            return obses, actions, rewards, next_obses, not_dones, idxs
+        else:
+            return obses, actions, rewards, next_obses, not_dones
 
     def save(self, save_dir):
         if self.idx == self.last_save:
