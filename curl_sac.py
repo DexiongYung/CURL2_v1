@@ -347,6 +347,11 @@ class RadSacAgent(object):
                 dict(size=self.image_size - i * 2) for i in range(20)
             ],
             "center_crop_drac": [dict(out=self.image_size + 2 * i) for i in range(20)],
+            "kornia_jitter": [
+                dict(bright=0.05, contrast=0.05, satur=0.05, hue=0.05)
+                for i in range(20)
+            ],
+            "rotate": [dict(p=0.1 * i) for i in range(11)],
         }
 
         self.augs_funcs = {}
