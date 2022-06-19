@@ -477,11 +477,9 @@ class RadSacAgent(object):
                 L.log("train_critic/NCE_loss", cpc_loss, step)
 
             self.critic_optimizer.zero_grad()
-            self.encoder_optimizer.zero_grad()
             self.cpc_optimizer.zero_grad()
             (critic_loss + cpc_loss).backward()
             self.critic_optimizer.step()
-            self.encoder_optimizer.step()
             self.cpc_optimizer.step()
         else:
             # Optimize the critic
