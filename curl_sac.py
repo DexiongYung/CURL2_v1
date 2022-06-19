@@ -6,6 +6,12 @@ import torch.nn.functional as F
 import utils
 from encoder import make_encoder
 import data_augs as rad
+from color_space import (
+    reshape_to_RGB,
+    split_RGB_into_R_GB,
+    R_GB_to_frame_stacked_R_GB,
+    split_into_frame_stacked_R_GB,
+)
 
 LOG_FREQ = 10000
 
@@ -567,6 +573,450 @@ class RadSacAgent(object):
 
     def save_curl(self, model_dir, step):
         torch.save(self.CURL.state_dict(), "%s/curl_%s.pt" % (model_dir, step))
+
+    def load(self, model_dir, step):
+        self.actor.load_state_dict(torch.load("%s/actor_%s.pt" % (model_dir, step)))
+        self.critic.load_state_dict(torch.load("%s/critic_%s.pt" % (model_dir, step)))
+
+
+def make_actor_critic_critic_target(
+    obs_shape,
+    action_shape,
+    hidden_dim,
+    encoder_type,
+    encoder_feature_dim,
+    actor_log_std_min,
+    actor_log_std_max,
+    num_layers,
+    num_filters,
+    device,
+):
+    actor = Actor(
+        obs_shape,
+        action_shape,
+        hidden_dim,
+        encoder_type,
+        encoder_feature_dim,
+        actor_log_std_min,
+        actor_log_std_max,
+        num_layers,
+        num_filters,
+    ).to(device)
+
+    critic = Critic(
+        obs_shape,
+        action_shape,
+        hidden_dim,
+        encoder_type,
+        encoder_feature_dim,
+        num_layers,
+        num_filters,
+    ).to(device)
+
+    critic_target = Critic(
+        obs_shape,
+        action_shape,
+        hidden_dim,
+        encoder_type,
+        encoder_feature_dim,
+        num_layers,
+        num_filters,
+    ).to(device)
+
+    return actor, critic, critic_target
+
+
+class InfoMinSacAgent(object):
+    """InfoMin with SAC."""
+
+    def __init__(
+        self,
+        obs_shape,
+        action_shape,
+        device,
+        hidden_dim=256,
+        discount=0.99,
+        init_temperature=0.1,
+        alpha_lr=1e-4,
+        alpha_beta=0.9,
+        actor_lr=1e-3,
+        actor_beta=0.9,
+        actor_log_std_min=-10,
+        actor_log_std_max=2,
+        actor_update_freq=2,
+        critic_lr=1e-3,
+        critic_beta=0.9,
+        critic_tau=0.005,
+        critic_target_update_freq=2,
+        encoder_type="pixel",
+        encoder_feature_dim=50,
+        encoder_lr=1e-3,
+        encoder_tau=0.05,
+        num_layers=4,
+        num_filters=32,
+        cpc_update_freq=1,
+        log_interval=100,
+        detach_encoder=False,
+        latent_dim=128,
+    ):
+        self.device = device
+        self.discount = discount
+        self.critic_tau = critic_tau
+        self.encoder_tau = encoder_tau
+        self.actor_update_freq = actor_update_freq
+        self.critic_target_update_freq = critic_target_update_freq
+        self.cpc_update_freq = cpc_update_freq
+        self.log_interval = log_interval
+        self.image_size = obs_shape[-1]
+        self.latent_dim = latent_dim
+        self.detach_encoder = detach_encoder
+        self.encoder_type = encoder_type
+
+        num_frames = int(obs_shape[0] / 3)
+        obs_shape_ch1 = (num_frames, self.image_size, self.image_size)
+        obs_shape_ch23 = (num_frames * 2, self.image_size, self.image_size)
+
+        (
+            self.actor_ch1,
+            self.critic_ch1,
+            self.critic_target_ch1,
+        ) = make_actor_critic_critic_target(
+            obs_shape=obs_shape_ch1,
+            action_shape=action_shape,
+            hidden_dim=hidden_dim,
+            encoder_type=encoder_type,
+            encoder_feature_dim=encoder_feature_dim,
+            actor_log_std_min=actor_log_std_min,
+            actor_log_std_max=actor_log_std_max,
+            num_layers=num_layers,
+            num_filters=num_filters,
+            device=device,
+        )
+
+        (
+            self.actor_ch23,
+            self.critic_ch23,
+            self.critic_target_ch23,
+        ) = make_actor_critic_critic_target(
+            obs_shape=obs_shape_ch23,
+            action_shape=action_shape,
+            hidden_dim=hidden_dim,
+            encoder_type=encoder_type,
+            encoder_feature_dim=encoder_feature_dim,
+            actor_log_std_min=actor_log_std_min,
+            actor_log_std_max=actor_log_std_max,
+            num_layers=num_layers,
+            num_filters=num_filters,
+            device=device,
+        )
+
+        self.f1 = make_encoder(
+            encoder_type=encoder_type,
+            obs_shape=obs_shape_ch1,
+            feature_dim=encoder_feature_dim,
+            num_layers=num_layers,
+            num_filters=num_filters,
+        ).to(self.device)
+        self.f2 = make_encoder(
+            encoder_type=encoder_type,
+            obs_shape=obs_shape_ch23,
+            feature_dim=encoder_feature_dim,
+            num_layers=num_layers,
+            num_filters=num_filters,
+        ).to(self.device)
+
+        self.critic_target_ch1.load_state_dict(self.critic_ch1.state_dict())
+        self.critic_target_ch23.load_state_dict(self.critic_ch23.state_dict())
+
+        # tie encoders between actor and critic, and CURL and critic
+        self.actor_ch1.encoder.copy_conv_weights_from(self.critic_ch1.encoder)
+        self.actor_ch23.encoder.copy_conv_weights_from(self.critic_ch23.encoder)
+
+        self.log_alpha_ch1 = torch.tensor(np.log(init_temperature)).to(device)
+        self.log_alpha_ch1.requires_grad = True
+        self.log_alpha_ch23 = torch.tensor(np.log(init_temperature)).to(device)
+        self.log_alpha_ch23.requires_grad = True
+        # set target entropy to -|A|
+        self.target_entropy = -np.prod(action_shape)
+
+        # optimizers
+        self.actor_ch1_optimizer = torch.optim.Adam(
+            self.actor_ch1.parameters(), lr=actor_lr, betas=(actor_beta, 0.999)
+        )
+
+        self.critic_ch1_optimizer = torch.optim.Adam(
+            self.critic_ch1.parameters(), lr=critic_lr, betas=(critic_beta, 0.999)
+        )
+
+        self.log_alpha_ch1_optimizer = torch.optim.Adam(
+            [self.log_alpha_ch1], lr=alpha_lr, betas=(alpha_beta, 0.999)
+        )
+
+        self.f1_optimizer = torch.optim.Adam(self.f1.parameters(), lr=encoder_lr)
+
+        self.actor_ch23_optimizer = torch.optim.Adam(
+            self.actor_ch23.parameters(), lr=actor_lr, betas=(actor_beta, 0.999)
+        )
+
+        self.critic_ch23_optimizer = torch.optim.Adam(
+            self.critic_ch23.parameters(), lr=critic_lr, betas=(critic_beta, 0.999)
+        )
+
+        self.log_alpha_ch23_optimizer = torch.optim.Adam(
+            [self.log_alpha_ch23], lr=alpha_lr, betas=(alpha_beta, 0.999)
+        )
+
+        self.f2_optimizer = torch.optim.Adam(self.f2.parameters(), lr=encoder_lr)
+
+        self.cross_entropy_loss = nn.CrossEntropyLoss()
+
+        self.train()
+
+    def train(self, training=True):
+        self.critic_target_ch1.train()
+        self.critic_target_ch23.train()
+        self.training = training
+        self.actor_ch1.train(training)
+        self.critic_ch1.train(training)
+        self.actor_ch23.train(training)
+        self.critic_ch23.train(training)
+
+    @property
+    def alpha_ch1(self):
+        return self.log_alpha_ch1.exp()
+
+    @property
+    def alpha_ch23(self):
+        return self.log_alpha_ch23.exp()
+
+    def select_action(self, obs):
+        with torch.no_grad():
+            obs = torch.FloatTensor(obs).to(self.device)
+            obs = obs.unsqueeze(0)
+            obs = rad.YDbDr(imgs=obs)
+            obs_R, obs_GB = split_into_frame_stacked_R_GB(obs=obs)
+            mu_ch1, _, _, _ = self.actor_ch1(
+                obs_R, compute_pi=False, compute_log_pi=False
+            )
+            mu_ch23, _, _, _ = self.actor_ch23(
+                obs_GB, compute_pi=False, compute_log_pi=False
+            )
+            mu_avg = (mu_ch1 + mu_ch23) / 2
+            return mu_avg.cpu().data.numpy().flatten()
+
+    def sample_action(self, obs):
+        if obs.shape[-1] != self.image_size:
+            obs = utils.center_crop_image(obs, self.image_size)
+
+        with torch.no_grad():
+            obs = torch.FloatTensor(obs).to(self.device)
+            obs = obs.unsqueeze(0)
+            obs = rad.YDbDr(imgs=obs)
+            obs_R, obs_GB = split_into_frame_stacked_R_GB(obs=obs)
+            _, pi_ch1, _, _ = self.actor_ch1(obs_R, compute_log_pi=False)
+            _, pi_ch23, _, _ = self.actor_ch23(obs_GB, compute_log_pi=False)
+            pi_avg = (pi_ch1 + pi_ch23) / 2
+            return pi_avg.cpu().data.numpy().flatten()
+
+    def calculate_critic_loss(
+        self,
+        obs,
+        action,
+        reward,
+        next_obs,
+        not_done,
+        actor,
+        critic,
+        critic_target,
+        alpha,
+    ):
+        with torch.no_grad():
+            _, policy_action, log_pi, _ = actor(next_obs)
+            target_Q1, target_Q2 = critic_target(next_obs, policy_action)
+            target_V = torch.min(target_Q1, target_Q2) - alpha.detach() * log_pi
+            target_Q = reward + (not_done * self.discount * target_V)
+
+        # get current Q estimates
+        current_Q1, current_Q2 = critic(obs, action, detach_encoder=self.detach_encoder)
+        return F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
+
+    def update_critic(
+        self,
+        obs_ch1,
+        obs_ch23,
+        action,
+        reward,
+        next_obs_ch1,
+        next_obs_ch23,
+        not_done,
+        L,
+        step,
+    ):
+        ch1_critic_loss = self.calculate_critic_loss(
+            obs=obs_ch1,
+            action=action,
+            reward=reward,
+            next_obs=next_obs_ch1,
+            not_done=not_done,
+            actor=self.actor_ch1,
+            critic=self.critic_ch1,
+            critic_target=self.critic_target_ch1,
+            alpha=self.alpha_ch1,
+        )
+
+        ch23_critic_loss = self.calculate_critic_loss(
+            obs=obs_ch23,
+            action=action,
+            reward=reward,
+            next_obs=next_obs_ch23,
+            not_done=not_done,
+            actor=self.actor_ch23,
+            critic=self.critic_ch23,
+            critic_target=self.critic_target_ch23,
+            alpha=self.alpha_ch23,
+        )
+
+        f1_out = self.f1(obs_ch1)
+        f2_out = self.f2(obs_ch23)
+
+        logits = torch.matmul(f1_out, f2_out.T)
+        logits = logits - torch.max(logits, 1)[0][:, None]
+        labels = torch.arange(logits.shape[0]).long().to(self.device)
+        NCE_loss = self.cross_entropy_loss(logits, labels)
+
+        if step % self.log_interval == 0:
+            L.log("train_critic/ch1_loss", ch1_critic_loss, step)
+            L.log("train_critic/ch23_loss", ch23_critic_loss, step)
+            L.log("train_critic/NCE_loss", NCE_loss, step)
+
+        # Optimize the critic
+        self.critic_ch1_optimizer.zero_grad()
+        self.critic_ch23_optimizer.zero_grad()
+        (ch1_critic_loss + ch23_critic_loss).backward()
+        self.critic_ch1_optimizer.step()
+        self.critic_ch23_optimizer.step()
+
+        self.f1_optimizer.zero_grad()
+        self.f2_optimizer.zero_grad()
+        (-1 * NCE_loss).backward()
+        self.f1_optimizer.step()
+        self.f2_optimizer.step()
+
+    def calcuate_actor_loss(self, obs, actor, critic, alpha):
+        _, pi, log_pi, log_std = actor(obs, detach_encoder=True)
+        actor_Q1, actor_Q2 = critic(obs, pi, detach_encoder=True)
+
+        actor_Q = torch.min(actor_Q1, actor_Q2)
+        actor_loss = (alpha.detach() * log_pi - actor_Q).mean()
+        entropy = 0.5 * log_std.shape[1] * (1.0 + np.log(2 * np.pi)) + log_std.sum(
+            dim=-1
+        )
+
+        return actor_loss, entropy, log_pi
+
+    def update_actor_and_alpha(self, obs_ch1, obs_ch23, L, step):
+        # detach encoder, so we don't update it with the actor loss
+        ch1_actor_loss, ch1_entropy, ch1_log_pi = self.calcuate_actor_loss(
+            obs=obs_ch1,
+            actor=self.actor_ch1,
+            critic=self.critic_ch1,
+            alpha=self.alpha_ch1,
+        )
+        ch23_actor_loss, ch23_entropy, ch23_log_pi = self.calcuate_actor_loss(
+            obs=obs_ch23,
+            actor=self.actor_ch23,
+            critic=self.critic_ch23,
+            alpha=self.alpha_ch23,
+        )
+
+        if step % self.log_interval == 0:
+            L.log("train_actor/ch1_loss", ch1_actor_loss, step)
+            L.log("train_actor/ch1_entropy", ch1_entropy.mean(), step)
+            L.log("train_actor/ch23_loss", ch23_actor_loss, step)
+            L.log("train_actor/ch23_entropy", ch23_entropy.mean(), step)
+
+        # optimize the actor
+        self.actor_ch1_optimizer.zero_grad()
+        self.actor_ch23_optimizer.zero_grad()
+        (ch1_actor_loss + ch23_actor_loss).backward()
+        self.actor_ch1_optimizer.step()
+        self.actor_ch23_optimizer.step()
+
+        # TODO!!!
+        # self.actor.log(L, step)
+
+        self.log_alpha_ch1_optimizer.zero_grad()
+        self.log_alpha_ch23_optimizer.zero_grad()
+        alpha_ch1_loss = (
+            self.alpha_ch1 * (-ch1_log_pi - self.target_entropy).detach()
+        ).mean()
+        alpha_ch23_loss = (
+            self.alpha_ch23 * (-ch23_log_pi - self.target_entropy).detach()
+        ).mean()
+        if step % self.log_interval == 0:
+            L.log("train_alpha/ch1_loss", alpha_ch1_loss, step)
+            L.log("train_alpha/ch1_value", self.alpha_ch1, step)
+            L.log("train_alpha/ch23_loss", alpha_ch23_loss, step)
+            L.log("train_alpha/ch23_value", self.alpha_ch23, step)
+        (alpha_ch1_loss + alpha_ch23_loss).backward()
+        self.log_alpha_ch1_optimizer.step()
+        self.log_alpha_ch23_optimizer.step()
+
+    def update(self, replay_buffer, L, step):
+        if self.encoder_type == "pixel":
+            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(None)
+            obs = rad.YDbDr(obs)
+            next_obs = rad.YDbDr(next_obs)
+            obs_R, obs_GB = split_into_frame_stacked_R_GB(obs=obs)
+            next_obs_R, next_obs_GB = split_into_frame_stacked_R_GB(obs=next_obs)
+        else:
+            obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
+
+        if step % self.log_interval == 0:
+            L.log("train/batch_reward", reward.mean(), step)
+
+        self.update_critic(
+            obs_ch1=obs_R,
+            obs_ch23=obs_GB,
+            action=action,
+            reward=reward,
+            next_obs_ch1=next_obs_R,
+            next_obs_ch23=next_obs_GB,
+            not_done=not_done,
+            L=L,
+            step=step,
+        )
+
+        if step % self.actor_update_freq == 0:
+            self.update_actor_and_alpha(obs_ch1=obs_R, obs_ch23=obs_GB, L=L, step=step)
+
+        if step % self.critic_target_update_freq == 0:
+            utils.soft_update_params(
+                self.critic_ch1.Q1, self.critic_target_ch1.Q1, self.critic_tau
+            )
+            utils.soft_update_params(
+                self.critic_ch1.Q2, self.critic_target_ch1.Q2, self.critic_tau
+            )
+            utils.soft_update_params(
+                self.critic_ch1.encoder,
+                self.critic_target_ch1.encoder,
+                self.encoder_tau,
+            )
+            utils.soft_update_params(
+                self.critic_ch23.Q1, self.critic_target_ch23.Q1, self.critic_tau
+            )
+            utils.soft_update_params(
+                self.critic_ch23.Q2, self.critic_target_ch23.Q2, self.critic_tau
+            )
+            utils.soft_update_params(
+                self.critic_ch23.encoder,
+                self.critic_target_ch23.encoder,
+                self.encoder_tau,
+            )
+
+    def save(self, model_dir, step):
+        torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
+        torch.save(self.critic.state_dict(), "%s/critic_%s.pt" % (model_dir, step))
 
     def load(self, model_dir, step):
         self.actor.load_state_dict(torch.load("%s/actor_%s.pt" % (model_dir, step)))

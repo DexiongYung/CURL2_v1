@@ -32,3 +32,11 @@ def R_GB_to_frame_stacked_R_GB(obs_R, obs_GB, num_imgs: int):
     return obs_R.reshape(-1, num_imgs, image_size, image_size), obs_GB.reshape(
         -1, num_imgs * 2, image_size, image_size
     )
+
+
+def split_into_frame_stacked_R_GB(obs):
+    obs_RGB = reshape_to_RGB(obs)
+    obs_R, obs_GB = split_RGB_into_R_GB(obs_RGB)
+    return R_GB_to_frame_stacked_R_GB(
+        obs_R=obs_R, obs_GB=obs_GB, num_imgs=int(obs.shape[1] / 3)
+    )
