@@ -36,6 +36,7 @@ AUG_TO_FUNC = {
     "crop_translate": dict(func=rad.crop_translate, params=dict(size=100)),
     "center_crop_drac": dict(func=rad.center_crop_DrAC, params=dict(out=116)),
     "no_aug": dict(func=rad.no_aug, params=dict()),
+    "ydbdr": dict(func=rad.YDbDr, params=dict()),
 }
 
 
@@ -555,9 +556,11 @@ class RadSacAgent(object):
 
     def update(self, replay_buffer, L, step):
         if CURL_STR in self.mode:
-            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(None)
-            aug_obs, action, reward, aug_next_obs, not_done = replay_buffer.sample_rad(
-                self.augs_funcs
+            obs, action, reward, next_obs, not_done, idxs = replay_buffer.sample_rad(
+                None, return_idxs=True
+            )
+            aug_obs, action, reward, _, not_done = replay_buffer.sample_rad(
+                self.augs_funcs, idxs=idxs
             )
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
