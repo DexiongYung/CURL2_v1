@@ -1,3 +1,4 @@
+from collections import deque
 import numpy as np
 import torch
 import torch.nn as nn
@@ -724,6 +725,12 @@ class InfoMinSacAgent(object):
             num_layers=num_layers,
             num_filters=num_filters,
         ).to(self.device)
+        self.score_queue = deque(maxlen=2)
+        self.NCE_scale = 1
+
+        self.g = nn.Sequential(
+            nn.Conv2d(obs_shape[0], obs_shape[0], 1).to(self.device), nn.ReLU()
+        )
 
         self.critic_target_ch1.load_state_dict(self.critic_ch1.state_dict())
         self.critic_target_ch23.load_state_dict(self.critic_ch23.state_dict())
@@ -752,7 +759,7 @@ class InfoMinSacAgent(object):
             [self.log_alpha_ch1], lr=alpha_lr, betas=(alpha_beta, 0.999)
         )
 
-        self.f1_optimizer = torch.optim.Adam(self.f1.parameters(), lr=encoder_lr)
+        self.f1_optimizer = torch.optim.Adam(self.f1.parameters(), lr=encoder_lr / 2)
 
         self.actor_ch23_optimizer = torch.optim.Adam(
             self.actor_ch23.parameters(), lr=actor_lr, betas=(actor_beta, 0.999)
@@ -766,7 +773,10 @@ class InfoMinSacAgent(object):
             [self.log_alpha_ch23], lr=alpha_lr, betas=(alpha_beta, 0.999)
         )
 
-        self.f2_optimizer = torch.optim.Adam(self.f2.parameters(), lr=encoder_lr)
+        self.f2_optimizer = torch.optim.Adam(self.f2.parameters(), lr=encoder_lr / 2)
+
+        self.g_optimizer = torch.optim.Adam(self.g.parameters(), lr=encoder_lr)
+        # self.g_optimizer = torch.optim.lr_scheduler.CosineAnnealingLR(self.g_optimizer)
 
         self.cross_entropy_loss = nn.CrossEntropyLoss()
 
@@ -780,6 +790,9 @@ class InfoMinSacAgent(object):
         self.critic_ch1.train(training)
         self.actor_ch23.train(training)
         self.critic_ch23.train(training)
+        self.f1.train(training)
+        self.f2.train(training)
+        self.g.train(training)
 
     @property
     def alpha_ch1(self):
@@ -794,6 +807,7 @@ class InfoMinSacAgent(object):
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
             obs = rad.YDbDr(imgs=obs)
+            obs = self.g(obs)
             obs_R, obs_GB = split_into_frame_stacked_R_GB(obs=obs)
             mu_ch1, _, _, _ = self.actor_ch1(
                 obs_R, compute_pi=False, compute_log_pi=False
@@ -812,6 +826,7 @@ class InfoMinSacAgent(object):
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
             obs = rad.YDbDr(imgs=obs)
+            obs = self.g(obs)
             obs_R, obs_GB = split_into_frame_stacked_R_GB(obs=obs)
             _, pi_ch1, _, _ = self.actor_ch1(obs_R, compute_log_pi=False)
             _, pi_ch23, _, _ = self.actor_ch23(obs_GB, compute_log_pi=False)
@@ -879,7 +894,9 @@ class InfoMinSacAgent(object):
         f1_out = self.f1(obs_ch1)
         f2_out = self.f2(obs_ch23)
 
-        logits = torch.matmul(f1_out, f2_out.T)
+        logits = torch.matmul(
+            self.critic_ch1.encoder(obs_ch1), self.critic_ch23.encoder(obs_ch23).T
+        )
         logits = logits - torch.max(logits, 1)[0][:, None]
         labels = torch.arange(logits.shape[0]).long().to(self.device)
         NCE_loss = self.cross_entropy_loss(logits, labels)
@@ -889,16 +906,29 @@ class InfoMinSacAgent(object):
             L.log("train_critic/ch23_loss", ch23_critic_loss, step)
             L.log("train_critic/NCE_loss", NCE_loss, step)
 
+        # if len(self.score_queue) > 1:
+        #     score_diff = self.score_queue[1] - self.score_queue[0]
+        #     self.NCE_scale = self.NCE_scale if score_diff >= 0 else -1 * self.NCE_scale
+
         # Optimize the critic
         self.critic_ch1_optimizer.zero_grad()
         self.critic_ch23_optimizer.zero_grad()
-        (ch1_critic_loss + ch23_critic_loss).backward()
+        self.g_optimizer.zero_grad()
+        (ch1_critic_loss + ch23_critic_loss + NCE_loss).backward()
         self.critic_ch1_optimizer.step()
         self.critic_ch23_optimizer.step()
+        self.g_optimizer.step()
+
+        f1_out = self.f1(obs_ch1.detach())
+        f2_out = self.f2(obs_ch23.detach())
+
+        logits = torch.matmul(f1_out, f2_out.T)
+        logits = logits - torch.max(logits, 1)[0][:, None]
+        max_NCE_loss = -1 * self.cross_entropy_loss(logits, labels)
 
         self.f1_optimizer.zero_grad()
         self.f2_optimizer.zero_grad()
-        (-1 * NCE_loss).backward()
+        (max_NCE_loss).backward()
         self.f1_optimizer.step()
         self.f2_optimizer.step()
 
@@ -913,6 +943,61 @@ class InfoMinSacAgent(object):
         )
 
         return actor_loss, entropy, log_pi
+
+    def calculate_NCE_loss(self, obs_ch1, obs_ch23, step, L):
+        f1_out = self.f1(obs_ch1)
+        f2_out = self.f2(obs_ch23)
+
+        logits = torch.matmul(
+            self.critic_ch1.encoder(obs_ch1), self.critic_ch23.encoder(obs_ch23).T
+        )
+        logits = logits - torch.max(logits, 1)[0][:, None]
+        labels = torch.arange(logits.shape[0]).long().to(self.device)
+        NCE_loss = self.cross_entropy_loss(logits, labels)
+
+        if step % self.log_interval == 0:
+            L.log("train_critic/NCE_loss", NCE_loss, step)
+
+        f1_out = self.f1(obs_ch1.detach())
+        f2_out = self.f2(obs_ch23.detach())
+
+        logits = torch.matmul(f1_out, f2_out.T)
+        logits = logits - torch.max(logits, 1)[0][:, None]
+        max_NCE_loss = -1 * self.cross_entropy_loss(logits, labels)
+
+        return NCE_loss, max_NCE_loss
+
+    def update_InfoMin(self, obs_ch1, obs_ch23, step, L):
+        f1_out = self.f1(obs_ch1)
+        f2_out = self.f2(obs_ch23)
+
+        logits = torch.matmul(
+            self.critic_ch1.encoder(obs_ch1), self.critic_ch23.encoder(obs_ch23).T
+        )
+        logits = logits - torch.max(logits, 1)[0][:, None]
+        labels = torch.arange(logits.shape[0]).long().to(self.device)
+        NCE_loss = self.cross_entropy_loss(logits, labels)
+
+        if step % self.log_interval == 0:
+            L.log("train_critic/NCE_loss", NCE_loss, step)
+
+        # optimize the actor
+        self.g_optimizer.zero_grad()
+        NCE_loss.backward()
+        self.g_optimizer.step()
+
+        f1_out = self.f1(obs_ch1.detach())
+        f2_out = self.f2(obs_ch23.detach())
+
+        logits = torch.matmul(f1_out, f2_out.T)
+        logits = logits - torch.max(logits, 1)[0][:, None]
+        max_NCE_loss = -1 * self.cross_entropy_loss(logits, labels)
+
+        self.f1_optimizer.zero_grad()
+        self.f2_optimizer.zero_grad()
+        (max_NCE_loss).backward()
+        self.f1_optimizer.step()
+        self.f2_optimizer.step()
 
     def update_actor_and_alpha(self, obs_ch1, obs_ch23, L, step):
         # detach encoder, so we don't update it with the actor loss
@@ -967,6 +1052,8 @@ class InfoMinSacAgent(object):
             obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(None)
             obs = rad.YDbDr(obs)
             next_obs = rad.YDbDr(next_obs)
+            obs = self.g(obs)
+            next_obs = self.g(obs)
             obs_R, obs_GB = split_into_frame_stacked_R_GB(obs=obs)
             next_obs_R, next_obs_GB = split_into_frame_stacked_R_GB(obs=next_obs)
         else:
@@ -987,8 +1074,12 @@ class InfoMinSacAgent(object):
             step=step,
         )
 
+        # self.update_InfoMin(obs_ch1=obs_R, obs_ch23=obs_GB, step=step, L=L)
+
         if step % self.actor_update_freq == 0:
-            self.update_actor_and_alpha(obs_ch1=obs_R, obs_ch23=obs_GB, L=L, step=step)
+            self.update_actor_and_alpha(
+                obs_ch1=obs_R.detach(), obs_ch23=obs_GB.detach(), L=L, step=step
+            )
 
         if step % self.critic_target_update_freq == 0:
             utils.soft_update_params(
