@@ -9,6 +9,8 @@ import data_augs as rad
 
 LOG_FREQ = 10000
 
+CURL_STR = "CURL"
+
 AUG_TO_FUNC = {
     "crop": dict(func=rad.random_crop, params=dict(out=84)),
     "grayscale": dict(func=rad.random_grayscale, params=dict(p=0.3)),
@@ -320,6 +322,7 @@ class RadSacAgent(object):
         detach_encoder=False,
         latent_dim=128,
         data_augs="",
+        mode="",
     ):
         self.device = device
         self.discount = discount
@@ -334,6 +337,7 @@ class RadSacAgent(object):
         self.detach_encoder = detach_encoder
         self.encoder_type = encoder_type
         self.data_augs = data_augs
+        self.mode = mode
 
         self.augs_funcs = {}
         for aug_name in self.data_augs.split("-"):
@@ -397,7 +401,7 @@ class RadSacAgent(object):
             [self.log_alpha], lr=alpha_lr, betas=(alpha_beta, 0.999)
         )
 
-        if self.encoder_type == "pixel":
+        if CURL_STR in self.mode:
             # create CURL encoder (the 128 batch size is probably unnecessary)
             self.CURL = CURL(
                 obs_shape,
@@ -413,7 +417,7 @@ class RadSacAgent(object):
                 self.critic.encoder.parameters(), lr=encoder_lr
             )
 
-            self.cpc_optimizer = torch.optim.Adam(self.CURL.parameters(), lr=encoder_lr)
+            self.cpc_optimizer = torch.optim.Adam([self.CURL.W], lr=encoder_lr)
         self.cross_entropy_loss = nn.CrossEntropyLoss()
 
         self.train()
@@ -505,6 +509,16 @@ class RadSacAgent(object):
         alpha_loss.backward()
         self.log_alpha_optimizer.step()
 
+    def calculate_cpc_loss(self, obs_anchor, obs_pos):
+        z_a = self.CURL.encode(obs_anchor)
+        z_pos = self.CURL.encode(obs_pos, ema=True)
+
+        logits = self.CURL.compute_logits(z_a, z_pos)
+        labels = torch.arange(logits.shape[0]).long().to(self.device)
+        loss = self.cross_entropy_loss(logits, labels)
+
+        return loss
+
     def update_cpc(self, obs_anchor, obs_pos, L, step):
 
         # time flips
@@ -514,13 +528,7 @@ class RadSacAgent(object):
         obs_anchor = torch.cat((obs_anchor, time_anchor), 0)
         obs_pos = torch.cat((obs_anchor, time_pos), 0)
         """
-        z_a = self.CURL.encode(obs_anchor)
-        z_pos = self.CURL.encode(obs_pos, ema=True)
-
-        logits = self.CURL.compute_logits(z_a, z_pos)
-        labels = torch.arange(logits.shape[0]).long().to(self.device)
-        loss = self.cross_entropy_loss(logits, labels)
-
+        loss = self.calculate_cpc_loss(obs_anchor=obs_anchor, obs_pos=obs_pos)
         self.encoder_optimizer.zero_grad()
         self.cpc_optimizer.zero_grad()
         loss.backward()
@@ -531,12 +539,14 @@ class RadSacAgent(object):
             L.log("train/curl_loss", loss, step)
 
     def update(self, replay_buffer, L, step):
-        if self.encoder_type == "pixel":
+        if CURL_STR in self.mode:
+            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
+                None
+            )
+        else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                 self.augs_funcs
             )
-        else:
-            obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
 
         if step % self.log_interval == 0:
             L.log("train/batch_reward", reward.mean(), step)
@@ -557,9 +567,9 @@ class RadSacAgent(object):
                 self.critic.encoder, self.critic_target.encoder, self.encoder_tau
             )
 
-        # if step % self.cpc_update_freq == 0 and self.encoder_type == 'pixel':
-        #    obs_anchor, obs_pos = cpc_kwargs["obs_anchor"], cpc_kwargs["obs_pos"]
-        #    self.update_cpc(obs_anchor, obs_pos, L, step)
+        if step % self.cpc_update_freq == 0 and self.encoder_type == "pixel":
+            obs_anchor, obs_pos = cpc_kwargs["obs_anchor"], cpc_kwargs["obs_pos"]
+            self.update_cpc(obs_anchor, obs_pos, L, step)
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
