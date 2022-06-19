@@ -451,7 +451,7 @@ class RadSacAgent(object):
             mu, pi, _, _ = self.actor(obs, compute_log_pi=False)
             return pi.cpu().data.numpy().flatten()
 
-    def update_critic(self, obs, action, reward, next_obs, not_done, L, step):
+    def update_critic(self, obs, action, reward, next_obs, not_done, L, step, aug_obs):
         with torch.no_grad():
             _, policy_action, log_pi, _ = self.actor(next_obs)
             target_Q1, target_Q2 = self.critic_target(next_obs, policy_action)
@@ -465,13 +465,28 @@ class RadSacAgent(object):
         critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
             current_Q2, target_Q
         )
+
         if step % self.log_interval == 0:
             L.log("train_critic/loss", critic_loss, step)
 
-        # Optimize the critic
-        self.critic_optimizer.zero_grad()
-        critic_loss.backward()
-        self.critic_optimizer.step()
+        if CURL_STR in self.mode:
+            cpc_loss = self.calculate_cpc_loss(obs_anchor=obs, obs_pos=aug_obs)
+
+            if step % self.log_interval == 0:
+                L.log("train_critic/NCE_loss", cpc_loss, step)
+
+            self.critic_optimizer.zero_grad()
+            self.encoder_optimizer.zero_grad()
+            self.cpc_optimizer.zero_grad()
+            (critic_loss + cpc_loss).backward()
+            self.critic_optimizer.step()
+            self.encoder_optimizer.step()
+            self.cpc_optimizer.step()
+        else:
+            # Optimize the critic
+            self.critic_optimizer.zero_grad()
+            critic_loss.backward()
+            self.critic_optimizer.step()
 
         # TODD!!!
         # self.critic.log(L, step)
@@ -540,8 +555,9 @@ class RadSacAgent(object):
 
     def update(self, replay_buffer, L, step):
         if CURL_STR in self.mode:
-            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
-                None
+            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(None)
+            aug_obs, action, reward, aug_next_obs, not_done = replay_buffer.sample_rad(
+                self.augs_funcs
             )
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
@@ -551,7 +567,9 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log("train/batch_reward", reward.mean(), step)
 
-        self.update_critic(obs, action, reward, next_obs, not_done, L, step)
+        self.update_critic(
+            obs, action, reward, next_obs, not_done, L, step, aug_obs=aug_obs
+        )
 
         if step % self.actor_update_freq == 0:
             self.update_actor_and_alpha(obs, L, step)
@@ -567,9 +585,9 @@ class RadSacAgent(object):
                 self.critic.encoder, self.critic_target.encoder, self.encoder_tau
             )
 
-        if step % self.cpc_update_freq == 0 and self.encoder_type == "pixel":
-            obs_anchor, obs_pos = cpc_kwargs["obs_anchor"], cpc_kwargs["obs_pos"]
-            self.update_cpc(obs_anchor, obs_pos, L, step)
+        # if step % self.cpc_update_freq == 0 and self.encoder_type == "pixel":
+        #     obs_anchor, obs_pos = cpc_kwargs["obs_anchor"], cpc_kwargs["obs_pos"]
+        #     self.update_cpc(obs_anchor, obs_pos, L, step)
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
