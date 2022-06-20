@@ -401,7 +401,7 @@ class RadSacAgent(object):
             [self.log_alpha], lr=alpha_lr, betas=(alpha_beta, 0.999)
         )
 
-        if self.encoder_type == "pixel":
+        if self.encoder_type == "pixel" and CURL_STR in self.mode:
             # create CURL encoder (the 128 batch size is probably unnecessary)
             self.CURL = CURL(
                 obs_shape,
