@@ -348,6 +348,7 @@ class RadSacAgent(object):
             assert aug_name in AUG_TO_FUNC, "invalid data aug string"
             self.augs_funcs[aug_name] = AUG_TO_FUNC[aug_name]
 
+        print(f"Mode is: {mode}")
         print(f"Aug set: {self.augs_funcs}")
 
         self.actor = Actor(
