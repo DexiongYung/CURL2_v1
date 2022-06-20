@@ -431,7 +431,7 @@ class RadSacAgent(object):
         self.training = training
         self.actor.train(training)
         self.critic.train(training)
-        if self.encoder_type == "pixel":
+        if self.encoder_type == "pixel" and CURL_STR in self.mode:
             self.CURL.train(training)
 
     @property
@@ -442,6 +442,10 @@ class RadSacAgent(object):
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
+
+            if YDBDR_STR in self.mode:
+                obs = rad.YDbDr(obs)
+
             mu, _, _, _ = self.actor(obs, compute_pi=False, compute_log_pi=False)
             return mu.cpu().data.numpy().flatten()
 
@@ -452,6 +456,10 @@ class RadSacAgent(object):
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
+
+            if YDBDR_STR in self.mode:
+                obs = rad.YDbDr(obs)
+
             mu, pi, _, _ = self.actor(obs, compute_log_pi=False)
             return pi.cpu().data.numpy().flatten()
 
