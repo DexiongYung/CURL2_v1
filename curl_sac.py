@@ -444,7 +444,7 @@ class RadSacAgent(object):
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
 
-            if YDBDR_STR in self.mode:
+            if YDBDR_STR in self.mode or "ydbdr" in self.data_augs:
                 obs = rad.YDbDr(obs)
 
             mu, _, _, _ = self.actor(obs, compute_pi=False, compute_log_pi=False)
@@ -458,7 +458,7 @@ class RadSacAgent(object):
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
 
-            if YDBDR_STR in self.mode:
+            if YDBDR_STR in self.mode or "ydbdr" in self.data_augs:
                 obs = rad.YDbDr(obs)
 
             mu, pi, _, _ = self.actor(obs, compute_log_pi=False)
