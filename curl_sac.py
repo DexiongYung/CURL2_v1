@@ -9,6 +9,8 @@ import data_augs as rad
 
 LOG_FREQ = 10000
 
+CURL_STR = "CURL"
+
 AUG_TO_FUNC = {
     "crop": dict(func=rad.random_crop, params=dict(out=84)),
     "grayscale": dict(func=rad.random_grayscale, params=dict(p=0.3)),
@@ -320,6 +322,7 @@ class RadSacAgent(object):
         detach_encoder=False,
         latent_dim=128,
         data_augs="",
+        mode="",
     ):
         self.device = device
         self.discount = discount
@@ -334,6 +337,7 @@ class RadSacAgent(object):
         self.detach_encoder = detach_encoder
         self.encoder_type = encoder_type
         self.data_augs = data_augs
+        self.mode = mode
 
         self.augs_funcs = {}
         for aug_name in self.data_augs.split("-"):
@@ -532,9 +536,19 @@ class RadSacAgent(object):
 
     def update(self, replay_buffer, L, step):
         if self.encoder_type == "pixel":
-            obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
-                self.augs_funcs
-            )
+            if CURL_STR in self.mode:
+                (
+                    obs,
+                    action,
+                    reward,
+                    next_obs,
+                    not_done,
+                    idxs,
+                ) = replay_buffer.sample_rad(None, return_idxs=True)
+            else:
+                obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
+                    self.augs_funcs
+                )
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
 
@@ -557,9 +571,9 @@ class RadSacAgent(object):
                 self.critic.encoder, self.critic_target.encoder, self.encoder_tau
             )
 
-        # if step % self.cpc_update_freq == 0 and self.encoder_type == 'pixel':
-        #    obs_anchor, obs_pos = cpc_kwargs["obs_anchor"], cpc_kwargs["obs_pos"]
-        #    self.update_cpc(obs_anchor, obs_pos, L, step)
+        if step % self.cpc_update_freq == 0 and CURL_STR in self.mode:
+            obs_pos, _, _, _, _ = replay_buffer.sample_rad(self.augs_funcs, idxs=idxs)
+            self.update_cpc(obs_anchor=obs, obs_pos=obs_pos, L=L, step=step)
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
