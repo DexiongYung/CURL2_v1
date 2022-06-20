@@ -41,6 +41,15 @@
             "args": ["--config_file", "./configs/curl_ydbdr.json"]
         },
         {
+            "name": "Train YDbDr",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/ydbdr.json"]
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
