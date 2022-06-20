@@ -533,7 +533,32 @@ class RadSacAgent(object):
         # TODD!!!
         # self.critic.log(L, step)
 
-    def update_actor_and_alpha(self, obs, L, step, aug_obs):
+    def update_DrAC(self, obs, next_obs, aug_obs, aug_next_obs, L, step):
+        mu, pi, log_pi, log_std = self.actor(obs)
+        aug_mu, aug_pi, aug_log_pi, aug_log_std = self.actor(aug_obs)
+        aug_actor_Q1, aug_actor_Q2 = self.critic(aug_obs, aug_pi)
+        actor_Q1, actor_Q2 = self.critic(obs, pi)
+        V = (torch.min(actor_Q1, actor_Q2) - self.alpha.detach() * log_pi).detach()
+        aug_V = torch.min(aug_actor_Q1, aug_actor_Q2) - self.alpha.detach() * aug_log_pi
+        policy_reg = F.kl_div(
+            torch.normal(mu, log_std.exp()).detach(),
+            torch.normal(aug_mu, aug_log_std.exp()),
+        )
+        value_reg = F.mse_loss(V, aug_V)
+
+        loss = self.drac_alpha * (value_reg + policy_reg)
+
+        self.actor_optimizer.zero_grad()
+        self.critic_optimizer.zero_grad()
+        loss.backward()
+        self.actor_optimizer.step()
+        self.critic_optimizer.step()
+
+        if step % self.log_interval == 0:
+            L.log("train_actor/policy_regularization", policy_reg, step)
+            L.log("train_actor/value_regularization", value_reg, step)
+
+    def update_actor_and_alpha(self, obs, L, step):
         # detach encoder, so we don't update it with the actor loss
         mu, pi, log_pi, log_std = self.actor(obs, detach_encoder=True)
         actor_Q1, actor_Q2 = self.critic(obs, pi, detach_encoder=True)
@@ -550,28 +575,28 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log("train_actor/entropy", entropy.mean(), step)
 
-        if aug_obs is not None:
-            aug_mu, aug_pi, aug_log_pi, aug_log_std = self.actor(
-                aug_obs, detach_encoder=True
-            )
-            aug_actor_Q1, aug_actor_Q2 = self.critic(
-                aug_obs, aug_pi, detach_encoder=True
-            )
-            V = (torch.min(actor_Q1, actor_Q2) - self.alpha.detach() * log_pi).detach()
-            aug_V = (
-                torch.min(aug_actor_Q1, aug_actor_Q2) - self.alpha.detach() * aug_log_pi
-            )
-            policy_reg = F.kl_div(
-                torch.normal(mu, log_std.exp()).detach(),
-                torch.normal(aug_mu, aug_log_std.exp()),
-            )
-            value_reg = F.mse_loss(V, aug_V)
+        # if aug_obs is not None:
+        #     aug_mu, aug_pi, aug_log_pi, aug_log_std = self.actor(
+        #         aug_obs, detach_encoder=True
+        #     )
+        #     aug_actor_Q1, aug_actor_Q2 = self.critic(
+        #         aug_obs, aug_pi, detach_encoder=True
+        #     )
+        #     V = (torch.min(actor_Q1, actor_Q2) - self.alpha.detach() * log_pi).detach()
+        #     aug_V = (
+        #         torch.min(aug_actor_Q1, aug_actor_Q2) - self.alpha.detach() * aug_log_pi
+        #     )
+        #     policy_reg = F.kl_div(
+        #         torch.normal(mu, log_std.exp()).detach(),
+        #         torch.normal(aug_mu, aug_log_std.exp()),
+        #     )
+        #     value_reg = F.mse_loss(V, aug_V)
 
-            actor_loss += self.drac_alpha * (value_reg + policy_reg)
+        #     actor_loss += self.drac_alpha * (value_reg + policy_reg)
 
-            if step % self.log_interval == 0:
-                L.log("train_actor/policy_regularization", policy_reg, step)
-                L.log("train_actor/value_regularization", value_reg, step)
+        #     if step % self.log_interval == 0:
+        #         L.log("train_actor/policy_regularization", policy_reg, step)
+        #         L.log("train_actor/value_regularization", value_reg, step)
 
         # optimize the actor
         self.actor_optimizer.zero_grad()
@@ -631,18 +656,7 @@ class RadSacAgent(object):
         self.update_critic(obs, action, reward, next_obs, not_done, L, step)
 
         if step % self.actor_update_freq == 0:
-            aug_obs = None
-            if self.mode and "drac" in self.mode:
-                if "ucb" in self.mode:
-                    self.ucb_select_aug()
-                    aug_obs, _, _, _, _ = replay_buffer.sample_rad(
-                        {self.last_aug: self.augs_funcs[self.last_aug]}, idxs=idxs
-                    )
-                else:
-                    aug_obs, _, _, _, _ = replay_buffer.sample_rad(
-                        self.augs_funcs, idxs=idxs
-                    )
-            self.update_actor_and_alpha(obs=obs, L=L, step=step, aug_obs=aug_obs)
+            self.update_actor_and_alpha(obs=obs, L=L, step=step)
 
         if step % self.critic_target_update_freq == 0:
             utils.soft_update_params(
@@ -658,6 +672,26 @@ class RadSacAgent(object):
         # if step % self.cpc_update_freq == 0 and self.encoder_type == 'pixel':
         #    obs_anchor, obs_pos = cpc_kwargs["obs_anchor"], cpc_kwargs["obs_pos"]
         #    self.update_cpc(obs_anchor, obs_pos, L, step)
+
+        if self.mode and "drac" in self.mode:
+            if "ucb" in self.mode:
+                self.ucb_select_aug()
+                aug_obs, _, _, aug_next_obs, _ = replay_buffer.sample_rad(
+                    {self.last_aug: self.augs_funcs[self.last_aug]}, idxs=idxs
+                )
+            else:
+                aug_obs, _, _, aug_next_obs, _ = replay_buffer.sample_rad(
+                    self.augs_funcs, idxs=idxs
+                )
+
+            self.update_DrAC(
+                obs=obs,
+                next_obs=next_obs,
+                aug_obs=aug_obs,
+                aug_next_obs=aug_next_obs,
+                L=L,
+                step=step,
+            )
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
