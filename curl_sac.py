@@ -10,6 +10,7 @@ import data_augs as rad
 LOG_FREQ = 10000
 
 CURL_STR = "CURL"
+YDBDR_STR = "YDbDr"
 
 AUG_TO_FUNC = {
     "crop": dict(func=rad.random_crop, params=dict(out=84)),
@@ -35,6 +36,9 @@ AUG_TO_FUNC = {
     "in_frame_translate": dict(func=rad.in_frame_translate, params=dict(size=94)),
     "crop_translate": dict(func=rad.crop_translate, params=dict(size=100)),
     "center_crop_drac": dict(func=rad.center_crop_DrAC, params=dict(out=116)),
+    "ydbdr": dict(func=rad.YDbDr, params=dict()),
+    "drydb": dict(func=rad.DrYDb, params=dict()),
+    "dbdry": dict(func=rad.DbDrY, params=dict()),
     "no_aug": dict(func=rad.no_aug, params=dict()),
 }
 
@@ -545,6 +549,10 @@ class RadSacAgent(object):
                     not_done,
                     idxs,
                 ) = replay_buffer.sample_rad(None, return_idxs=True)
+
+                if YDBDR_STR in self.mode:
+                    obs = rad.YDbDr(obs)
+                    next_obs = rad.YDbDr(next_obs)
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                     self.augs_funcs

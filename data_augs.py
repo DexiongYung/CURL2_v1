@@ -131,6 +131,20 @@ def YDbDr(imgs):
     return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
 
 
+def DbDrY(imgs):
+    frame_stack_sz = imgs.shape[1]
+    imgs_rgb = reshape_to_RGB(obs=imgs)
+    imgs_ydbdr = RGB_to_DbDrY(obs_RGB=imgs_rgb)
+    return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
+
+
+def DrYDb(imgs):
+    frame_stack_sz = imgs.shape[1]
+    imgs_rgb = reshape_to_RGB(obs=imgs)
+    imgs_ydbdr = RGB_to_DrYDb(obs_RGB=imgs_rgb)
+    return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
+
+
 def random_cutout_color(imgs, min_cut=10, max_cut=30):
     """
     args:
