@@ -96,8 +96,8 @@ if __name__ == "__main__":
     cat_tnsrs = torch.unsqueeze(torch.cat(tnsrs_list, dim=0), dim=0)
 
     # show_stacked_imgs(cat_tnsrs.numpy())
-    aug_tnsrs = rad.random_convolution(cat_tnsrs)
-    img = aug_tnsrs.reshape(-1, 3, 100, 100)[0].detach().numpy()
+    aug_tnsrs = rad.YDbDr(cat_tnsrs)
+    img = aug_tnsrs.reshape(-1, 3, 100, 100)[0]
     # show_stacked_imgs(aug_tnsrs.numpy())
     show_channels(np.transpose(img, (1, 2, 0)))
-    plt.savefig("conv.png")
+    plt.savefig("luv.png")

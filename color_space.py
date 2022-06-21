@@ -1,4 +1,6 @@
 import torch
+import numpy as np
+from skimage import color
 
 
 def reshape_to_RGB(obs):
@@ -12,63 +14,39 @@ def reshape_to_frame_stack(obs, frame_stack_sz: int):
 
 
 def RGB_to_YDbDr(obs_RGB):
-    r = obs_RGB[:, 0]
-    g = obs_RGB[:, 1]
-    b = obs_RGB[:, 2]
-
-    y = 0.299 * r + 0.587 * g + 0.114 * b
-    db = -0.450 * r + -0.883 * g + 1.333 * b
-    dr = -1.333 * r + 1.116 * g + 0.217 * b
-
-    return torch.stack([y, db, dr], -3)
-
-
-def RGB_to_DrYDb(obs_RGB):
-    r = obs_RGB[:, 0]
-    g = obs_RGB[:, 1]
-    b = obs_RGB[:, 2]
-
-    y = 0.299 * r + 0.587 * g + 0.114 * b
-    db = -0.450 * r + -0.883 * g + 1.333 * b
-    dr = -1.333 * r + 1.116 * g + 0.217 * b
-
-    return torch.stack([dr, y, db], -3)
-
-
-def RGB_to_DbDrY(obs_RGB):
-    r = obs_RGB[:, 0]
-    g = obs_RGB[:, 1]
-    b = obs_RGB[:, 2]
-
-    y = 0.299 * r + 0.587 * g + 0.114 * b
-    db = -0.450 * r + -0.883 * g + 1.333 * b
-    dr = -1.333 * r + 1.116 * g + 0.217 * b
-
-    return torch.stack([db, dr, y], -3)
+    obs_RGB *= 255.0
+    img = np.asarray(obs_RGB, np.uint8)
+    img = img.transpose(0, 2, 3, 1)
+    img = color.rgb2luv(img)
+    img = img.transpose(0, 3, 1, 2)
+    return img
 
 
 def RGB_to_YUV(obs_RGB):
-    r = obs_RGB[:, 0]
-    g = obs_RGB[:, 1]
-    b = obs_RGB[:, 2]
-
-    y = 0.257 * r + 0.504 * g + 0.098 * b + 16
-    u = -0.148 * r - 0.291 * g + 0.439 * b + 128
-    v = 0.439 * r - 0.368 * g - 0.071 * b + 128
-
-    return torch.stack([y, u, v], -3)
+    obs_RGB *= 255.0
+    img = np.asarray(obs_RGB, np.uint8)
+    img = img.transpose(0, 2, 3, 1)
+    img = color.rgb2yuv(img)
+    img = img.transpose(0, 3, 1, 2)
+    return img
 
 
 def RGB_to_YIQ(obs_RGB):
-    r = obs_RGB[:, 0]
-    g = obs_RGB[:, 1]
-    b = obs_RGB[:, 2]
+    obs_RGB *= 255.0
+    img = np.asarray(obs_RGB, np.uint8)
+    img = img.transpose(0, 2, 3, 1)
+    img = color.rgb2yiq(img)
+    img = img.transpose(0, 3, 1, 2)
+    return img
 
-    y = 0.299 * r + 0.587 * g + 0.114 * b
-    u = 0.5959 * r - 0.2746 * g - 0.3213 * b
-    v = 0.2115 * r - 0.5227 * g + 0.3112 * b
 
-    return torch.stack([y, u, v], -3)
+def RGB_to_LAB(obs_RGB):
+    obs_RGB *= 255.0
+    img = np.asarray(obs_RGB, np.uint8)
+    img = img.transpose(0, 2, 3, 1)
+    img = color.rgb2lab(img)
+    img = img.transpose(0, 3, 1, 2)
+    return img
 
 
 def split_RGB_into_R_GB(obs):
