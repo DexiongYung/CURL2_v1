@@ -8,7 +8,7 @@ import dmc2gym
 import utils
 from logger import Logger
 from video import VideoRecorder
-from curl_sac import RadSacAgent
+from curl_sac import RadSacAgent, CURL_V2_STR
 
 
 def parse_args():
@@ -86,7 +86,9 @@ def run_eval(env, agent, video, video_enabled, args, sample_stochastically=False
         # center crop image
         if args.encoder_type == "pixel" and "crop" in args.data_augs:
             obs = utils.center_crop_image(obs, args.image_size)
-        if args.encoder_type == "pixel" and "translate" in args.data_augs:
+        if args.encoder_type == "pixel" and (
+            "translate" in args.data_augs or CURL_V2_STR in args.mode
+        ):
             # first crop the center with pre_image_size
             obs = utils.center_crop_image(obs, args.pre_transform_image_size)
             # then translate cropped to center
@@ -184,7 +186,7 @@ def make_agent(obs_shape, action_shape, args, device):
             detach_encoder=args.detach_encoder,
             latent_dim=args.latent_dim,
             data_augs=args.data_augs,
-            mode=args.mode
+            mode=args.mode,
         )
     else:
         assert "agent is not supported: %s" % args.agent
