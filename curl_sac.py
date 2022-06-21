@@ -37,8 +37,9 @@ AUG_TO_FUNC = {
     "crop_translate": dict(func=rad.crop_translate, params=dict(size=100)),
     "center_crop_drac": dict(func=rad.center_crop_DrAC, params=dict(out=116)),
     "ydbdr": dict(func=rad.YDbDr, params=dict()),
-    "drydb": dict(func=rad.DrYDb, params=dict()),
-    "dbdry": dict(func=rad.DbDrY, params=dict()),
+    "yuv": dict(func=rad.YUV, params=dict()),
+    "lab": dict(func=rad.LAB, params=dict()),
+    "yiq": dict(func=rad.YIQ, params=dict()),
     "no_aug": dict(func=rad.no_aug, params=dict()),
 }
 

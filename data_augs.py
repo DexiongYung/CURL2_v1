@@ -151,8 +151,16 @@ def HSV(imgs):
 def YIQ(imgs):
     # Converts RGB back to 255
     frame_stack_sz = imgs.shape[1]
-    imgs_rgb = reshape_to_RGB(obs=imgs) * 255.0
-    imgs_ydbdr = RGB_to_YIQ(obs_RGB=imgs_rgb) / 255.0
+    imgs_rgb = reshape_to_RGB(obs=imgs)
+    imgs_ydbdr = RGB_to_YIQ(obs_RGB=imgs_rgb)
+    return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
+
+
+def LAB(imgs):
+    # Converts RGB back to 255
+    frame_stack_sz = imgs.shape[1]
+    imgs_rgb = reshape_to_RGB(obs=imgs)
+    imgs_ydbdr = RGB_to_LAB(obs_RGB=imgs_rgb)
     return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
 
 

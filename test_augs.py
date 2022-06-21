@@ -100,4 +100,4 @@ if __name__ == "__main__":
     img = aug_tnsrs.reshape(-1, 3, 100, 100)[0]
     # show_stacked_imgs(aug_tnsrs.numpy())
     show_channels(np.transpose(img, (1, 2, 0)))
-    plt.savefig("luv.png")
+    plt.savefig("ydbdr.png")
