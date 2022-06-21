@@ -146,7 +146,7 @@ class ReplayBuffer(Dataset):
 
         return obses, actions, rewards, next_obses, not_dones, cpc_kwargs
 
-    def sample_rad(self, aug_funcs, idxs=None, return_idxs=False):
+    def sample_rad(self, aug_funcs, idxs=None, return_idxs=False, obs_only=False):
 
         # augs specified as flags
         # curl_sac organizes flags into aug funcs
@@ -166,14 +166,20 @@ class ReplayBuffer(Dataset):
                 # apply crop and cutout first
                 if "crop" in aug or "cutout" in aug:
                     obses = func(obses, **params)
-                    next_obses = func(next_obses, **params)
+
+                    if not obs_only:
+                        next_obses = func(next_obses, **params)
                 elif "translate" in aug:
                     og_obses = center_crop_images(obses, self.pre_image_size)
-                    og_next_obses = center_crop_images(next_obses, self.pre_image_size)
                     obses, rndm_idxs = func(
                         og_obses, self.image_size, return_random_idxs=True
                     )
-                    next_obses = func(og_next_obses, self.image_size, **rndm_idxs)
+
+                    if not obs_only:
+                        og_next_obses = center_crop_images(
+                            next_obses, self.pre_image_size
+                        )
+                        next_obses = func(og_next_obses, self.image_size, **rndm_idxs)
 
         obses = torch.as_tensor(obses, device=self.device).float()
         next_obses = torch.as_tensor(next_obses, device=self.device).float()
@@ -195,7 +201,8 @@ class ReplayBuffer(Dataset):
                     continue
 
                 obses = func(obses, **params)
-                next_obses = func(next_obses, **params)
+                if not obs_only:
+                    next_obses = func(next_obses, **params)
 
         if return_idxs:
             return obses, actions, rewards, next_obses, not_dones, idxs
