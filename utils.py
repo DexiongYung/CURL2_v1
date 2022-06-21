@@ -8,7 +8,7 @@ import random
 from torch.utils.data import Dataset, DataLoader
 import time
 from skimage.util.shape import view_as_windows
-from data_augs import random_crop
+from data_augs import random_crop, random_translate
 
 
 class eval_mode(object):
@@ -131,6 +131,36 @@ class ReplayBuffer(Dataset):
         obses = random_crop(obses, self.image_size)
         next_obses = random_crop(next_obses, self.image_size)
         pos = random_crop(pos, self.image_size)
+
+        obses = torch.as_tensor(obses, device=self.device).float()
+        next_obses = torch.as_tensor(next_obses, device=self.device).float()
+        actions = torch.as_tensor(self.actions[idxs], device=self.device)
+        rewards = torch.as_tensor(self.rewards[idxs], device=self.device)
+        not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
+
+        pos = torch.as_tensor(pos, device=self.device).float()
+        cpc_kwargs = dict(
+            obs_anchor=obses, obs_pos=pos, time_anchor=None, time_pos=None
+        )
+
+        return obses, actions, rewards, next_obses, not_dones, cpc_kwargs
+
+    def sample_cpc_v2(self):
+        idxs = np.random.randint(
+            0, self.capacity if self.full else self.idx, size=self.batch_size
+        )
+
+        obses = self.obses[idxs]
+        next_obses = self.next_obses[idxs]
+        pos = obses.copy()
+
+        obses, random_idxs = random_translate(
+            imgs=obses, size=self.image_size, return_random_idxs=True
+        )
+        next_obses = random_translate(
+            imgs=next_obses, size=self.image_size, **random_idxs
+        )
+        pos = random_translate(imgs=pos, size=self.image_size)
 
         obses = torch.as_tensor(obses, device=self.device).float()
         next_obses = torch.as_tensor(next_obses, device=self.device).float()
