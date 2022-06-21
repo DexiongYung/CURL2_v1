@@ -8,6 +8,7 @@ import random
 from torch.utils.data import Dataset, DataLoader
 import time
 from skimage.util.shape import view_as_windows
+from data_augs import random_crop
 
 
 class eval_mode(object):
@@ -119,8 +120,6 @@ class ReplayBuffer(Dataset):
         return obses, actions, rewards, next_obses, not_dones
 
     def sample_cpc(self):
-
-        start = time.time()
         idxs = np.random.randint(
             0, self.capacity if self.full else self.idx, size=self.batch_size
         )
@@ -129,9 +128,9 @@ class ReplayBuffer(Dataset):
         next_obses = self.next_obses[idxs]
         pos = obses.copy()
 
-        obses = fast_random_crop(obses, self.image_size)
-        next_obses = fast_random_crop(next_obses, self.image_size)
-        pos = fast_random_crop(pos, self.image_size)
+        obses = random_crop(obses, self.image_size)
+        next_obses = random_crop(next_obses, self.image_size)
+        pos = random_crop(pos, self.image_size)
 
         obses = torch.as_tensor(obses, device=self.device).float()
         next_obses = torch.as_tensor(next_obses, device=self.device).float()
