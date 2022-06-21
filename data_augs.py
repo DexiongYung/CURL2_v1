@@ -131,11 +131,19 @@ def YDbDr(imgs):
     imgs_ydbdr = RGB_to_YDbDr(obs_RGB=imgs_rgb)
     return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
 
+
 def YUV(imgs):
     # Converts RGB back to 255
     frame_stack_sz = imgs.shape[1]
-    imgs_rgb = reshape_to_RGB(obs=imgs) * 255.0
-    imgs_ydbdr = RGB_to_YUV(obs_RGB=imgs_rgb) / 255.0
+    imgs_rgb = reshape_to_RGB(obs=imgs)
+    imgs_ydbdr = kornia.color.rgb_to_yuv(imgs_rgb)
+    return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
+
+def HSV(imgs):
+    # Converts RGB back to 255
+    frame_stack_sz = imgs.shape[1]
+    imgs_rgb = reshape_to_RGB(obs=imgs)
+    imgs_ydbdr = kornia.color.rgb_to_hsv(imgs_rgb)
     return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
 
 def YIQ(imgs):
@@ -144,6 +152,7 @@ def YIQ(imgs):
     imgs_rgb = reshape_to_RGB(obs=imgs) * 255.0
     imgs_ydbdr = RGB_to_YIQ(obs_RGB=imgs_rgb) / 255.0
     return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
+
 
 def DbDrY(imgs):
     frame_stack_sz = imgs.shape[1]
