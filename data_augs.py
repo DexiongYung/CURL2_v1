@@ -3,8 +3,19 @@ import torch
 import kornia
 import torch.nn as nn
 from TransformLayer import ColorJitterLayer
+
 # from utils import center_translates, center_crop_images
 from color_space import *
+
+
+def center_translates(image, size):
+    b, c, h, w = image.shape
+    assert size >= h and size >= w
+    outs = np.zeros((b, c, size, size), dtype=image.dtype)
+    h1 = (size - h) // 2
+    w1 = (size - w) // 2
+    outs[:, :, h1 : h1 + h, w1 : w1 + w] = image
+    return outs
 
 
 def random_crop(imgs, out=84):
@@ -131,6 +142,7 @@ def YDbDr(imgs):
     imgs_ydbdr = RGB_to_YDbDr(obs_RGB=imgs_rgb)
     return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
 
+
 def YUV(imgs):
     # Converts RGB back to 255
     frame_stack_sz = imgs.shape[1]
@@ -138,12 +150,14 @@ def YUV(imgs):
     imgs_ydbdr = RGB_to_YUV(obs_RGB=imgs_rgb) / 255.0
     return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
 
+
 def YIQ(imgs):
     # Converts RGB back to 255
     frame_stack_sz = imgs.shape[1]
     imgs_rgb = reshape_to_RGB(obs=imgs) * 255.0
     imgs_ydbdr = RGB_to_YIQ(obs_RGB=imgs_rgb) / 255.0
     return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
+
 
 def random_cutout_color(imgs, min_cut=10, max_cut=30):
     """

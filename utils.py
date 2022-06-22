@@ -8,7 +8,8 @@ import random
 from torch.utils.data import Dataset, DataLoader
 import time
 from skimage.util.shape import view_as_windows
-from data_augs import random_crop, random_translate
+from data_augs import random_crop
+from mocov3 import TwoCropsTransform
 
 
 class eval_mode(object):
@@ -79,6 +80,7 @@ class ReplayBuffer(Dataset):
         self.image_size = image_size
         self.pre_image_size = pre_image_size  # for translation
         self.transform = transform
+
         # the proprioceptive obs is stored as float32, pixels obs as uint8
         obs_dtype = np.float32 if len(obs_shape) == 1 else np.uint8
 
@@ -91,6 +93,9 @@ class ReplayBuffer(Dataset):
         self.idx = 0
         self.last_save = 0
         self.full = False
+        self.simclr_augs = TwoCropsTransform(
+            image_size=self.image_size, device=self.device
+        )
 
     def add(self, obs, action, reward, next_obs, done):
 
@@ -154,21 +159,36 @@ class ReplayBuffer(Dataset):
         next_obses = self.next_obses[idxs]
         pos = obses.copy()
 
-        obses, random_idxs = random_translate(
-            imgs=obses, size=self.image_size, return_random_idxs=True
-        )
-        next_obses = random_translate(
-            imgs=next_obses, size=self.image_size, **random_idxs
-        )
-        pos = random_translate(imgs=pos, size=self.image_size)
+        obses = random_crop(obses, self.image_size)
+        next_obses = random_crop(next_obses, self.image_size)
+        pos = random_crop(pos, self.image_size)
 
         obses = torch.as_tensor(obses, device=self.device).float()
         next_obses = torch.as_tensor(next_obses, device=self.device).float()
         actions = torch.as_tensor(self.actions[idxs], device=self.device)
         rewards = torch.as_tensor(self.rewards[idxs], device=self.device)
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
-
         pos = torch.as_tensor(pos, device=self.device).float()
+
+        obses /= 255.0
+        next_obses /= 255.0
+        pos /= 255.0
+
+        frame_stacked_sz = obses.shape[1]
+        obses = obses.reshape((-1, 3, self.image_size, self.image_size))
+        next_obses = next_obses.reshape((-1, 3, self.image_size, self.image_size))
+        pos = pos.reshape((-1, 3, self.image_size, self.image_size))
+
+        obses = self.simclr_augs.base_transform1(img=obses).detach()
+        next_obses = self.simclr_augs.base_transform1(img=next_obses).detach()
+        pos = self.simclr_augs.base_transform2(img=pos).detach()
+
+        obses = obses.reshape(-1, frame_stacked_sz, self.image_size, self.image_size)
+        next_obses = next_obses.reshape(
+            -1, frame_stacked_sz, self.image_size, self.image_size
+        )
+        pos = pos.reshape(-1, frame_stacked_sz, self.image_size, self.image_size)
+
         cpc_kwargs = dict(
             obs_anchor=obses, obs_pos=pos, time_anchor=None, time_pos=None
         )

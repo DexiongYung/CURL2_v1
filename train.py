@@ -8,7 +8,7 @@ import dmc2gym
 import utils
 from logger import Logger
 from video import VideoRecorder
-from curl_sac import RadSacAgent, CURL_V2_STR
+from curl_sac import CURL_STR, RadSacAgent, CURL_V2_STR
 
 
 def parse_args():
@@ -84,11 +84,13 @@ def run_eval(env, agent, video, video_enabled, args, sample_stochastically=False
     episode_reward = 0
     while not done:
         # center crop image
-        if args.encoder_type == "pixel" and "crop" in args.data_augs:
-            obs = utils.center_crop_image(obs, args.image_size)
-        if args.encoder_type == "pixel" and (
-            "translate" in args.data_augs or CURL_V2_STR in args.mode
+        if (
+            args.encoder_type == "pixel"
+            and "crop" in args.data_augs
+            or CURL_STR in args.mode
         ):
+            obs = utils.center_crop_image(obs, args.image_size)
+        if args.encoder_type == "pixel" and ("translate" in args.data_augs):
             # first crop the center with pre_image_size
             obs = utils.center_crop_image(obs, args.pre_transform_image_size)
             # then translate cropped to center
@@ -209,7 +211,9 @@ def main():
     )
 
     pre_transform_image_size = (
-        args.pre_transform_image_size if "crop" in args.data_augs else args.image_size
+        args.pre_transform_image_size
+        if "crop" in args.data_augs or CURL_STR in args.mode
+        else args.image_size
     )
     pre_image_size = (
         args.pre_transform_image_size

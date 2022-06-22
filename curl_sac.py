@@ -527,14 +527,19 @@ class RadSacAgent(object):
         labels = torch.arange(logits.shape[0]).long().to(self.device)
         loss = self.cross_entropy_loss(logits, labels)
 
+        z_a_pos = self.CURL.encode(obs_pos)
+        z_pos_a = self.CURL.encode(obs_anchor, ema=True)
+        logits = self.CURL.compute_logits(z_a=z_a_pos, z_pos=z_pos_a)
+        loss_2 = self.cross_entropy_loss(logits, labels)
+
         self.encoder_optimizer.zero_grad()
         self.cpc_optimizer.zero_grad()
-        loss.backward()
-
+        (loss + loss_2).backward()
         self.encoder_optimizer.step()
         self.cpc_optimizer.step()
         if step % self.log_interval == 0:
             L.log("train/curl_loss", loss, step)
+            L.log("train/curl_loss", loss_2, step)
 
     def update(self, replay_buffer, L, step):
         if self.encoder_type == "pixel":
