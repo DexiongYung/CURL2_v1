@@ -25,7 +25,7 @@
     "frame_stack": 3,
     "hidden_dim": 1024,
     "id": "CURL_2CPC",
-    "image_size": 84,
+    "image_size": 108,
     "init_steps": 1000,
     "init_temperature": 0.1,
     "latent_dim": 128,
