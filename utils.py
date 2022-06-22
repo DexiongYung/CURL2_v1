@@ -8,7 +8,7 @@ import random
 from torch.utils.data import Dataset, DataLoader
 import time
 from skimage.util.shape import view_as_windows
-from data_augs import random_crop
+from data_augs import random_crop, random_translate
 from mocov3 import TwoCropsTransform
 
 
@@ -133,9 +133,9 @@ class ReplayBuffer(Dataset):
         next_obses = self.next_obses[idxs]
         pos = obses.copy()
 
-        obses = random_crop(obses, self.image_size)
-        next_obses = random_crop(next_obses, self.image_size)
-        pos = random_crop(pos, self.image_size)
+        obses, translate_idxs = random_translate(obses, self.image_size, return_random_idxs=True)
+        next_obses = random_translate(next_obses, self.image_size, **translate_idxs)
+        pos = random_translate(pos, self.image_size)
 
         obses = torch.as_tensor(obses, device=self.device).float()
         next_obses = torch.as_tensor(next_obses, device=self.device).float()
