@@ -553,7 +553,7 @@ class RadSacAgent(object):
 
     def update(self, replay_buffer, L, step):
         if self.encoder_type == "pixel":
-            if CURL_V1_STR in self.mode:
+            if CURL_STR in self.mode:
                 (
                     obs,
                     action,
@@ -562,15 +562,6 @@ class RadSacAgent(object):
                     not_done,
                     cpc_kwargs,
                 ) = replay_buffer.sample_cpc()
-            elif CURL_V2_STR in self.mode:
-                (
-                    obs,
-                    action,
-                    reward,
-                    next_obs,
-                    not_done,
-                    cpc_kwargs,
-                ) = replay_buffer.sample_cpc_v2()
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                     self.augs_funcs
