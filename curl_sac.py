@@ -347,6 +347,7 @@ class RadSacAgent(object):
             self.augs_funcs[aug_name] = AUG_TO_FUNC[aug_name]
 
         print(f"Aug set: {self.augs_funcs}")
+        print(f"Mode is: {self.mode}")
 
         self.actor = Actor(
             obs_shape,
@@ -436,7 +437,17 @@ class RadSacAgent(object):
     def alpha(self):
         return self.log_alpha.exp()
 
+    def obs_reshape(self, obs):
+        if obs.shape[-1] > self.image_size:
+            obs = utils.center_crop_image(obs, self.image_size)
+        elif obs.shape[-1] < self.image_size:
+            obs = utils.center_crop_image(obs, obs.shape[-1])
+            obs = utils.center_translate(image=obs, size=self.image_size)
+
+        return obs
+
     def select_action(self, obs):
+        obs = self.obs_reshape(obs=obs)
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
@@ -444,8 +455,7 @@ class RadSacAgent(object):
             return mu.cpu().data.numpy().flatten()
 
     def sample_action(self, obs):
-        if obs.shape[-1] != self.image_size:
-            obs = utils.center_crop_image(obs, self.image_size)
+        obs = self.obs_reshape(obs=obs)
 
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)

@@ -83,18 +83,19 @@ def run_eval(env, agent, video, video_enabled, args, sample_stochastically=False
     done = False
     episode_reward = 0
     while not done:
+        # TODO: Done in select_action and sample_action now
         # center crop image
-        if (
-            args.encoder_type == "pixel"
-            and "crop" in args.data_augs
-            or CURL_STR in args.mode
-        ):
-            obs = utils.center_crop_image(obs, args.image_size)
-        if args.encoder_type == "pixel" and ("translate" in args.data_augs):
-            # first crop the center with pre_image_size
-            obs = utils.center_crop_image(obs, args.pre_transform_image_size)
-            # then translate cropped to center
-            obs = utils.center_translate(obs, args.image_size)
+        # if (
+        #     args.encoder_type == "pixel"
+        #     and "crop" in args.data_augs
+        #     or CURL_STR in args.mode
+        # ):
+        #     obs = utils.center_crop_image(obs, args.image_size)
+        # if args.encoder_type == "pixel" and ("translate" in args.data_augs):
+        #     # first crop the center with pre_image_size
+        #     obs = utils.center_crop_image(obs, args.pre_transform_image_size)
+        #     # then translate cropped to center
+        #     obs = utils.center_translate(obs, args.image_size)
         with utils.eval_mode(agent):
             if sample_stochastically:
                 action = agent.sample_action(obs / 255.0)
