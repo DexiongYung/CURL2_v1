@@ -35,6 +35,7 @@ AUG_TO_FUNC = {
     "in_frame_translate": dict(func=rad.in_frame_translate, params=dict(size=94)),
     "crop_translate": dict(func=rad.crop_translate, params=dict(size=100)),
     "center_crop_drac": dict(func=rad.center_crop_DrAC, params=dict(out=116)),
+    "instdisc": dict(func=rad.instdisc, params=dict()),
     "no_aug": dict(func=rad.no_aug, params=dict()),
 }
 

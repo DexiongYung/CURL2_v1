@@ -3,7 +3,9 @@ import torch
 import kornia
 import torch.nn as nn
 from TransformLayer import ColorJitterLayer
-from utils import center_translates, center_crop_images
+import torchvision.transforms as transforms
+
+# from utils import center_translates, center_crop_images
 from color_space import *
 
 
@@ -23,6 +25,12 @@ def random_crop(imgs, out=84):
 
         cropped[i] = img[:, h11 : h11 + out, w11 : w11 + out]
     return cropped
+
+
+def random_resize_crop(imgs, min=0.5):
+    b, c, h, w = imgs.shape
+    img = torch.from_numpy(random_crop(imgs=imgs.numpy(), out=int(min * h)))
+    return transforms.Resize(size=h)(img).to(imgs.device).reshape(b, c, h, w)
 
 
 def center_crop_DrAC(imgs, out=116):
@@ -131,6 +139,7 @@ def YDbDr(imgs):
     imgs_ydbdr = RGB_to_YDbDr(obs_RGB=imgs_rgb)
     return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
 
+
 def YUV(imgs):
     # Converts RGB back to 255
     frame_stack_sz = imgs.shape[1]
@@ -138,12 +147,14 @@ def YUV(imgs):
     imgs_ydbdr = RGB_to_YUV(obs_RGB=imgs_rgb) / 255.0
     return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
 
+
 def YIQ(imgs):
     # Converts RGB back to 255
     frame_stack_sz = imgs.shape[1]
     imgs_rgb = reshape_to_RGB(obs=imgs) * 255.0
     imgs_ydbdr = RGB_to_YIQ(obs_RGB=imgs_rgb) / 255.0
     return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
+
 
 def random_cutout_color(imgs, min_cut=10, max_cut=30):
     """
@@ -289,12 +300,18 @@ def random_convolution(imgs):
     return total_out
 
 
-def random_color_jitter(imgs, bright=0.4, contrast=0.4, satur=0.4, hue=0.5):
+def random_color_jitter(imgs, bright=0.4, contrast=0.4, satur=0.4, hue=0.5, p=1):
     """
     inputs np array outputs tensor
     """
     b, c, h, w = imgs.shape
+    num_frames = int(c / 3)
+    num_samples = int(p * b * num_frames)
+
+    sampled_idxs = torch.from_numpy(np.random.randint(0, b, num_samples))
+
     imgs = imgs.view(-1, 3, h, w)
+    sampled_imgs = imgs[sampled_idxs]
     transform_module = nn.Sequential(
         ColorJitterLayer(
             brightness=bright,
@@ -307,21 +324,27 @@ def random_color_jitter(imgs, bright=0.4, contrast=0.4, satur=0.4, hue=0.5):
         )
     )
 
-    imgs = transform_module(imgs).view(b, c, h, w)
+    sampled_imgs = transform_module(sampled_imgs).view(b, c, h, w)
+    imgs[sampled_idxs] = sampled_imgs
     return imgs
 
 
-def kornia_color_jitter(imgs, bright=0.4, contrast=0.4, satur=0.4, hue=0.49):
+def kornia_color_jitter(imgs, bright=0.4, contrast=0.4, satur=0.4, hue=0.49, p=1):
     """
     inputs np array outputs tensor
     """
     b, c, h, w = imgs.shape
+    num_frames = int(c / 3)
+    num_samples = int(p * b * num_frames)
+
+    sampled_idxs = torch.from_numpy(np.random.randint(0, b, num_samples))
     imgs = imgs.view(-1, 3, h, w)
     model = kornia.augmentation.ColorJitter(
         brightness=bright, contrast=contrast, saturation=satur, hue=hue
     )
-    imgs = model(imgs).view(b, c, h, w)
-    return imgs
+    sampled_imgs = imgs[sampled_idxs]
+    imgs[sampled_idxs] = model(sampled_imgs)
+    return imgs.view(b, c, h, w)
 
 
 def random_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
@@ -357,6 +380,18 @@ def in_frame_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None)
             w1s=w1s,
         )
         return center_crop_images(image=outs, output_size=w)
+
+
+def instdisc(imgs):
+    b, c, h, w = imgs.shape
+
+    imgs_rcj = kornia_color_jitter(
+        imgs=imgs, bright=0.4, contrast=0.4, satur=0.2, hue=0.1, p=0.8
+    )
+    imgs_rg = random_grayscale(images=imgs_rcj, p=0.2)
+    imgs_flip = random_flip(images=imgs_rg, p=3 / 4)
+
+    return imgs_flip
 
 
 def crop_translate(imgs, out, return_random_idxs=False, h1s=None, w1s=None):
