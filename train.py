@@ -224,24 +224,11 @@ def main():
         frame_skip=args.action_repeat,
     )
 
-    eval_env = dmc2gym.make(
-        domain_name=args.domain_name,
-        task_name=args.task_name,
-        seed=args.seed,
-        visualize_reward=False,
-        from_pixels=(args.encoder_type == "pixel"),
-        height=pre_transform_image_size,
-        width=pre_transform_image_size,
-        frame_skip=args.action_repeat,
-    )
-
     env.seed(args.seed)
-    eval_env.seed(args.seed)
 
     # stack several consecutive frames together
     if args.encoder_type == "pixel":
         env = utils.FrameStack(env, k=args.frame_stack)
-        eval_env = utils.FrameStack(eval_env, k=args.frame_stack)
 
     # make directory
     ts = time.gmtime()
@@ -309,7 +296,7 @@ def main():
         if step % args.eval_freq == 0 or step == args.num_train_steps - 1 and step > 0:
             L.log("eval/episode", episode, step)
             evaluate(
-                eval_env,
+                env,
                 agent,
                 video,
                 args.num_eval_episodes,
