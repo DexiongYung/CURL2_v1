@@ -184,7 +184,7 @@ def make_agent(obs_shape, action_shape, args, device):
             detach_encoder=args.detach_encoder,
             latent_dim=args.latent_dim,
             data_augs=args.data_augs,
-            mode=args.mode
+            mode=args.mode,
         )
     else:
         assert "agent is not supported: %s" % args.agent
@@ -294,19 +294,21 @@ def main():
     for step in range(args.num_train_steps):
         # evaluate agent periodically
         if step % args.eval_freq == 0 or step == args.num_train_steps - 1 and step > 0:
+            num_eval_eps = (
+                100 if step == args.num_train_steps - 1 else args.num_eval_episodes
+            )
             L.log("eval/episode", episode, step)
             evaluate(
                 env,
                 agent,
                 video,
-                args.num_eval_episodes,
+                num_eval_eps,
                 L,
                 step,
                 args,
                 work_dir=work_dir,
             )
             if args.save_model:
-                agent.save_curl(checkpoint_dir, step)
                 agent.save(checkpoint_dir, step)
             if args.save_buffer:
                 replay_buffer.save(buffer_dir)

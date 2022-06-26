@@ -1,3 +1,4 @@
+from re import I
 import numpy as np
 import torch
 import torch.nn as nn
@@ -10,6 +11,7 @@ import data_augs as rad
 LOG_FREQ = 10000
 
 CURL_STR = "CURL"
+CURL2_STR = "CURL2"
 
 AUG_TO_FUNC = {
     "crop": dict(func=rad.random_crop, params=dict(out=84)),
@@ -538,14 +540,8 @@ class RadSacAgent(object):
     def update(self, replay_buffer, L, step):
         if self.encoder_type == "pixel":
             if CURL_STR in self.mode:
-                (
-                    obs,
-                    action,
-                    reward,
-                    next_obs,
-                    not_done,
-                    idxs,
-                ) = replay_buffer.sample_rad(None, return_idxs=True)
+                is_v2 = CURL2_STR in self.mode
+                obs, action, reward, next_obs, not_done, cpc_kwargs = replay_buffer.sample_cpc(use_v2=is_v2)
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                     self.augs_funcs
@@ -573,8 +569,9 @@ class RadSacAgent(object):
             )
 
         if step % self.cpc_update_freq == 0 and CURL_STR in self.mode:
-            obs_pos, _, _, _, _ = replay_buffer.sample_rad(self.augs_funcs, idxs=idxs)
-            self.update_cpc(obs_anchor=obs, obs_pos=obs_pos, L=L, step=step)
+            anchor = cpc_kwargs['obs_anchor']
+            pos = cpc_kwargs['obs_pos']
+            self.update_cpc(obs_anchor=anchor, obs_pos=pos, L=L, step=step)
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
