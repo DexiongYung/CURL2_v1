@@ -184,7 +184,7 @@ def make_agent(obs_shape, action_shape, args, device):
             detach_encoder=args.detach_encoder,
             latent_dim=args.latent_dim,
             data_augs=args.data_augs,
-            mode=args.mode
+            mode=args.mode,
         )
     else:
         assert "agent is not supported: %s" % args.agent
@@ -237,6 +237,7 @@ def main():
     exp_name = os.path.join(
         env_name,
         args.id,
+        f"seed_{args.seed}",
         ts,
     )
     work_dir = os.path.join(args.work_dir, exp_name)
