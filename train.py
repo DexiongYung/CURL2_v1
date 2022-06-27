@@ -237,6 +237,7 @@ def main():
     exp_name = os.path.join(
         env_name,
         args.id,
+        f"seed_{args.seed}",
         ts,
     )
     work_dir = os.path.join(args.work_dir, exp_name)
