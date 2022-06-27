@@ -346,6 +346,7 @@ class RadSacAgent(object):
             self.augs_funcs[aug_name] = AUG_TO_FUNC[aug_name]
 
         print(f"Aug set: {self.augs_funcs}")
+        print(f"Mode is: {self.mode}")
 
         self.actor = Actor(
             obs_shape,
