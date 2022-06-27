@@ -29,15 +29,10 @@ AUG_TO_FUNC = {
         params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5),
     ),
     "translate": dict(func=rad.random_translate, params=dict()),
-    "center_crop": dict(func=rad.center_random_crop, params=dict(out=84)),
-    "translate_cc": dict(func=rad.translate_center_crop, params=dict(crop_sz=100)),
     "kornia_jitter": dict(
         func=rad.kornia_color_jitter,
         params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5),
     ),
-    "in_frame_translate": dict(func=rad.in_frame_translate, params=dict(size=94)),
-    "crop_translate": dict(func=rad.crop_translate, params=dict(size=100)),
-    "center_crop_drac": dict(func=rad.center_crop_DrAC, params=dict(out=116)),
     "instdisc": dict(func=rad.instdisc, params=dict()),
     "no_aug": dict(func=rad.no_aug, params=dict()),
 }
