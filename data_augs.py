@@ -29,8 +29,10 @@ def random_crop(imgs, out=84):
 
 def random_resize_crop(imgs, min=0.5):
     b, c, h, w = imgs.shape
-    img = torch.from_numpy(random_crop(imgs=imgs.numpy(), out=int(min * h)))
-    return transforms.Resize(size=h)(img).to(imgs.device).reshape(b, c, h, w)
+    out = np.random.randint(low=int(min * h), high=h, size=1)[0]
+    img = torch.from_numpy(random_crop(imgs=imgs, out=out))
+    img = img.view(-1, 3, out, out)
+    return transforms.Resize(size=h)(img).reshape(b, c, h, w).numpy()
 
 
 # def center_crop_DrAC(imgs, out=116):

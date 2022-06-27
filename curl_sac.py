@@ -29,6 +29,7 @@ AUG_TO_FUNC = {
         params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5),
     ),
     "translate": dict(func=rad.random_translate, params=dict()),
+    "random_resize_crop": dict(func=rad.random_resize_crop, params=dict()),
     "kornia_jitter": dict(
         func=rad.kornia_color_jitter,
         params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5),
