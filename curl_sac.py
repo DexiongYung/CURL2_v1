@@ -12,6 +12,7 @@ LOG_FREQ = 10000
 
 CURL_STR = "CURL"
 CURL2_STR = "CURL2"
+BYOL_STR = "BYOL"
 
 AUG_TO_FUNC = {
     "crop": dict(func=rad.random_crop, params=dict(out=84)),
@@ -292,6 +293,54 @@ class CURL(nn.Module):
         return logits
 
 
+class BYOL_projection_MLP(nn.Module):
+    def __init__(self, z_dim: int) -> None:
+        super(BYOL_projection_MLP, self).__init__()
+        self.net = nn.Sequential(
+            nn.Linear(z_dim, z_dim),
+            nn.BatchNorm1d(z_dim),
+            nn.ReLU(),
+            nn.Linear(z_dim, z_dim),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class BYOL(nn.Module):
+    def __init__(
+        self,
+        z_dim,
+        critic,
+        critic_target,
+    ):
+        super(BYOL, self).__init__()
+        self.encoder = critic.encoder
+        self.encoder_target = critic_target.encoder
+        self.online_projection = BYOL_projection_MLP(z_dim=z_dim)
+        self.target_projection = BYOL_projection_MLP(z_dim=z_dim)
+        self.online_predict = BYOL_projection_MLP(z_dim=z_dim)
+
+    def encode(self, x, detach=False, target=False):
+        if target:
+            with torch.no_grad():
+                z_out = self.encoder_target(x)
+                z_fin = self.target_projection(z_out)
+        else:
+            z_out = self.encoder(x)
+            z_proj = self.online_projection(z_out)
+            z_fin = self.online_predict(z_proj)
+
+        if detach:
+            z_fin = z_fin.detach()
+        return z_fin
+
+    def compute_L2_MSE(self, z_a, z_pos):
+        z_a_norm = F.normalize(z_a, dim=-1, p=2)
+        z_pos_norm = F.normalize(z_pos, dim=-1, p=2)
+        return 2 - 2 * (z_a_norm * z_pos_norm).sum(dim=-1)
+
+
 class RadSacAgent(object):
     """RAD with SAC."""
 
@@ -406,22 +455,38 @@ class RadSacAgent(object):
         )
 
         if self.encoder_type == "pixel":
-            # create CURL encoder (the 128 batch size is probably unnecessary)
-            self.CURL = CURL(
-                obs_shape,
-                encoder_feature_dim,
-                self.latent_dim,
-                self.critic,
-                self.critic_target,
-                output_type="continuous",
-            ).to(self.device)
+            if CURL_STR in self.mode:
+                # create CURL encoder (the 128 batch size is probably unnecessary)
+                self.CURL = CURL(
+                    obs_shape,
+                    encoder_feature_dim,
+                    self.latent_dim,
+                    self.critic,
+                    self.critic_target,
+                    output_type="continuous",
+                ).to(self.device)
 
-            # optimizer for critic encoder for reconstruction loss
-            self.encoder_optimizer = torch.optim.Adam(
-                self.critic.encoder.parameters(), lr=encoder_lr
-            )
+                # optimizer for critic encoder for reconstruction loss
+                self.encoder_optimizer = torch.optim.Adam(
+                    self.critic.encoder.parameters(), lr=encoder_lr
+                )
 
-            self.cpc_optimizer = torch.optim.Adam(self.CURL.parameters(), lr=encoder_lr)
+                self.cpc_optimizer = torch.optim.Adam(
+                    self.CURL.parameters(), lr=encoder_lr
+                )
+            elif BYOL_STR in self.mode:
+                self.BYOL = BYOL(
+                    z_dim=encoder_feature_dim,
+                    critic=self.critic,
+                    critic_target=self.critic_target,
+                ).to(device=device)
+
+                self.encoder_optimizer = torch.optim.Adam(
+                    list(self.critic.encoder.parameters())
+                    + list(self.BYOL.online_projection.parameters())
+                    + list(self.BYOL.online_predict.parameters()),
+                    lr=encoder_lr,
+                )
         self.cross_entropy_loss = nn.CrossEntropyLoss()
 
         self.train()
@@ -431,8 +496,15 @@ class RadSacAgent(object):
         self.training = training
         self.actor.train(training)
         self.critic.train(training)
-        if self.encoder_type == "pixel":
+        try:
             self.CURL.train(training)
+        except Exception as e:
+            pass
+
+        try:
+            self.BYOL.train(training)
+        except Exception as e:
+            pass
 
     @property
     def alpha(self):
@@ -548,10 +620,23 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log("train/curl_loss", loss, step)
 
+    def update_BYOL(self, obs_anchor, obs_pos, L, step):
+        z_a = self.BYOL.encode(obs_anchor)
+        z_pos = self.BYOL.encode(obs_pos, target=True)
+
+        loss = self.BYOL.compute_L2_MSE(z_a=z_a, z_pos=z_pos).mean()
+
+        self.encoder_optimizer.zero_grad()
+        loss.backward()
+        self.encoder_optimizer.step()
+
+        if step % self.log_interval == 0:
+            L.log("train/BYOL_L2_MSE_loss", loss, step)
+
     def update(self, replay_buffer, L, step):
         if self.encoder_type == "pixel":
-            if CURL_STR in self.mode:
-                is_v2 = CURL2_STR in self.mode
+            if CURL_STR in self.mode or BYOL_STR in self.mode:
+                is_v2 = CURL2_STR in self.mode or BYOL_STR in self.mode
                 is_unique = "unique" in self.mode
                 (
                     obs,
@@ -587,10 +672,29 @@ class RadSacAgent(object):
                 self.critic.encoder, self.critic_target.encoder, self.encoder_tau
             )
 
-        if step % self.cpc_update_freq == 0 and CURL_STR in self.mode:
-            self.update_cpc(
-                obs_anchor=cpc_kwargs["obs_anchor"], obs_pos=cpc_kwargs["obs_pos"], L=L, step=step, use_SE="SE" in self.mode
-            )
+            if BYOL_STR in self.mode:
+                utils.soft_update_params(
+                    self.BYOL.target_projection,
+                    self.BYOL.online_projection,
+                    self.encoder_tau,
+                )
+
+        if step % self.cpc_update_freq == 0:
+            if CURL_STR in self.mode:
+                self.update_cpc(
+                    obs_anchor=cpc_kwargs["obs_anchor"],
+                    obs_pos=cpc_kwargs["obs_pos"],
+                    L=L,
+                    step=step,
+                    use_SE="SE" in self.mode,
+                )
+            elif BYOL_STR in self.mode:
+                self.update_BYOL(
+                    obs_anchor=cpc_kwargs["obs_anchor"],
+                    obs_pos=cpc_kwargs["obs_pos"],
+                    L=L,
+                    step=step,
+                )
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))

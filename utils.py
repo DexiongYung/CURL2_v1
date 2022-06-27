@@ -145,14 +145,13 @@ class ReplayBuffer(Dataset):
                     unique_idxs, replace=False, size=batch_sz
                 )
                 selected_obs = self.obses[selected_unique_idxs]
-                anchor = random_translate(selected_obs, self.image_size)
-                pos = random_translate(selected_obs, self.image_size)
+                anchor = random_translate(selected_obs.copy(), self.image_size)
+                pos = random_translate(selected_obs.copy(), self.image_size)
             else:
-                pos = random_translate(pos, self.image_size)
+                pos = random_translate(obses.copy(), self.image_size)
                 anchor = obses
         else:
-            pos = obses.copy()
-            obses = random_crop(obses, self.image_size)
+            obses = random_crop(obses.copy(), self.image_size)
             next_obses = random_crop(next_obses, self.image_size)
             pos = random_crop(pos, self.image_size)
             anchor = obses
