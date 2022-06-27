@@ -33,28 +33,28 @@ def random_resize_crop(imgs, min=0.5):
     return transforms.Resize(size=h)(img).to(imgs.device).reshape(b, c, h, w)
 
 
-def center_crop_DrAC(imgs, out=116):
-    _, _, h, _ = imgs.shape
-    imgs = center_translates(image=imgs, size=out)
-    return random_crop(imgs=imgs, out=h)
+# def center_crop_DrAC(imgs, out=116):
+#     _, _, h, _ = imgs.shape
+#     imgs = center_translates(image=imgs, size=out)
+#     return random_crop(imgs=imgs, out=h)
 
 
-def center_random_crop(imgs, out=84):
-    """
-    args:
-    imgs: np.array shape (B,C,H,W)
-    out: output size (e.g. 84)
-    returns np.array
-    """
-    n, c, h, w = imgs.shape
-    crop_max = h - out + 1
-    w1 = np.random.randint(0, crop_max, n)
-    h1 = np.random.randint(0, crop_max, n)
-    cropped = np.empty((n, c, out, out), dtype=imgs.dtype)
-    for i, (img, w11, h11) in enumerate(zip(imgs, w1, h1)):
+# def center_random_crop(imgs, out=84):
+#     """
+#     args:
+#     imgs: np.array shape (B,C,H,W)
+#     out: output size (e.g. 84)
+#     returns np.array
+#     """
+#     n, c, h, w = imgs.shape
+#     crop_max = h - out + 1
+#     w1 = np.random.randint(0, crop_max, n)
+#     h1 = np.random.randint(0, crop_max, n)
+#     cropped = np.empty((n, c, out, out), dtype=imgs.dtype)
+#     for i, (img, w11, h11) in enumerate(zip(imgs, w1, h1)):
 
-        cropped[i] = img[:, h11 : h11 + out, w11 : w11 + out]
-    return center_translates(image=cropped, size=h)
+#         cropped[i] = img[:, h11 : h11 + out, w11 : w11 + out]
+#     return center_translates(image=cropped, size=h)
 
 
 def grayscale(imgs):
@@ -360,26 +360,26 @@ def random_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
     return outs
 
 
-def in_frame_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
-    _, _, _, w = imgs.shape
-    if return_random_idxs:
-        outs, dims = random_translate(
-            imgs=imgs,
-            size=size,
-            return_random_idxs=return_random_idxs,
-            h1s=h1s,
-            w1s=w1s,
-        )
-        return center_crop_images(image=outs, output_size=w), dims
-    else:
-        outs = random_translate(
-            imgs=imgs,
-            size=size,
-            return_random_idxs=return_random_idxs,
-            h1s=h1s,
-            w1s=w1s,
-        )
-        return center_crop_images(image=outs, output_size=w)
+# def in_frame_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
+#     _, _, _, w = imgs.shape
+#     if return_random_idxs:
+#         outs, dims = random_translate(
+#             imgs=imgs,
+#             size=size,
+#             return_random_idxs=return_random_idxs,
+#             h1s=h1s,
+#             w1s=w1s,
+#         )
+#         return center_crop_images(image=outs, output_size=w), dims
+#     else:
+#         outs = random_translate(
+#             imgs=imgs,
+#             size=size,
+#             return_random_idxs=return_random_idxs,
+#             h1s=h1s,
+#             w1s=w1s,
+#         )
+#         return center_crop_images(image=outs, output_size=w)
 
 
 def instdisc(imgs):
@@ -406,19 +406,19 @@ def crop_translate(imgs, out, return_random_idxs=False, h1s=None, w1s=None):
     )
 
 
-def translate_center_crop(
-    imgs, crop_sz=100, return_random_idxs=False, h1s=None, w1s=None
-):
-    _, _, h, _ = imgs.shape
-    assert crop_sz <= h
-    cropped_imgs = center_crop_images(image=imgs, output_size=crop_sz)
-    return random_translate(
-        imgs=cropped_imgs,
-        size=h,
-        return_random_idxs=return_random_idxs,
-        h1s=h1s,
-        w1s=w1s,
-    )
+# def translate_center_crop(
+#     imgs, crop_sz=100, return_random_idxs=False, h1s=None, w1s=None
+# ):
+#     _, _, h, _ = imgs.shape
+#     assert crop_sz <= h
+#     cropped_imgs = center_crop_images(image=imgs, output_size=crop_sz)
+#     return random_translate(
+#         imgs=cropped_imgs,
+#         size=h,
+#         return_random_idxs=return_random_idxs,
+#         h1s=h1s,
+#         w1s=w1s,
+#     )
 
 
 def no_aug(x):
