@@ -8,7 +8,7 @@ import random
 from torch.utils.data import Dataset, DataLoader
 import time
 from skimage.util.shape import view_as_windows
-from data_augs import random_crop
+from data_augs import random_crop, random_translate
 
 
 class eval_mode(object):
@@ -119,28 +119,54 @@ class ReplayBuffer(Dataset):
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
         return obses, actions, rewards, next_obses, not_dones
 
-    def sample_cpc(self, use_v2):
+    def sample_cpc(self, use_v2=False, use_unique=False):
         idxs = np.random.randint(
             0, self.capacity if self.full else self.idx, size=self.batch_size
         )
 
         obses = self.obses[idxs]
         next_obses = self.next_obses[idxs]
-        pos = obses.copy()
 
-        obses = random_crop(obses, self.image_size)
-        next_obses = random_crop(next_obses, self.image_size)
-        pos = random_crop(pos, self.image_size)
+        if use_v2:
+            obses, translate_idxs = random_translate(
+                imgs=obses, size=self.image_size, return_random_idxs=True
+            )
+            next_obses = random_translate(
+                imgs=next_obses, size=self.image_size, **translate_idxs
+            )
+            if use_unique:
+                _, unique_idxs = np.unique(self.actions, axis=0, return_index=True)
+                batch_sz = (
+                    self.batch_size
+                    if len(unique_idxs) > self.batch_size
+                    else len(unique_idxs)
+                )
+                selected_unique_idxs = np.random.choice(
+                    unique_idxs, replace=False, size=batch_sz
+                )
+                selected_obs = self.obses[selected_unique_idxs]
+                anchor = random_translate(selected_obs, self.image_size)
+                pos = random_translate(selected_obs, self.image_size)
+            else:
+                pos = random_translate(pos, self.image_size)
+                anchor = obses
+        else:
+            pos = obses.copy()
+            obses = random_crop(obses, self.image_size)
+            next_obses = random_crop(next_obses, self.image_size)
+            pos = random_crop(pos, self.image_size)
+            anchor = obses
 
         obses = torch.as_tensor(obses, device=self.device).float()
         next_obses = torch.as_tensor(next_obses, device=self.device).float()
         actions = torch.as_tensor(self.actions[idxs], device=self.device)
         rewards = torch.as_tensor(self.rewards[idxs], device=self.device)
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
-
+        anchor = torch.as_tensor(anchor, device=self.device).float()
         pos = torch.as_tensor(pos, device=self.device).float()
+
         cpc_kwargs = dict(
-            obs_anchor=obses, obs_pos=pos, time_anchor=None, time_pos=None
+            obs_anchor=anchor, obs_pos=pos, time_anchor=None, time_pos=None
         )
 
         return obses, actions, rewards, next_obses, not_dones, cpc_kwargs

@@ -437,7 +437,19 @@ class RadSacAgent(object):
     def alpha(self):
         return self.log_alpha.exp()
 
+    def reshape_action(self, obs):
+        if obs.shape[-1] > self.image_size:
+            obs = utils.center_crop_image(obs, self.image_size)
+        elif obs.shape[-1] < self.image_size:
+            obs = utils.center_crop_image(
+                obs, image=self.image_size, output_size=obs.shape[-1]
+            )
+            obs = utils.center_translate(image=obs, size=self.image_size)
+
+        return obs
+
     def select_action(self, obs):
+        obs = self.reshape_action(obs=obs)
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
@@ -445,9 +457,7 @@ class RadSacAgent(object):
             return mu.cpu().data.numpy().flatten()
 
     def sample_action(self, obs):
-        if obs.shape[-1] != self.image_size:
-            obs = utils.center_crop_image(obs, self.image_size)
-
+        obs = self.reshape_action(obs=obs)
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
@@ -512,7 +522,7 @@ class RadSacAgent(object):
         alpha_loss.backward()
         self.log_alpha_optimizer.step()
 
-    def update_cpc(self, obs_anchor, obs_pos, L, step):
+    def update_cpc(self, obs_anchor, obs_pos, L, step, use_SE=False):
 
         # time flips
         """
@@ -522,7 +532,7 @@ class RadSacAgent(object):
         obs_pos = torch.cat((obs_anchor, time_pos), 0)
         """
         z_a = self.CURL.encode(obs_anchor)
-        z_pos = self.CURL.encode(obs_pos, ema=True)
+        z_pos = self.CURL.encode(obs_pos, ema=not use_SE)
 
         logits = self.CURL.compute_logits(z_a, z_pos)
         labels = torch.arange(logits.shape[0]).long().to(self.device)
@@ -541,7 +551,15 @@ class RadSacAgent(object):
         if self.encoder_type == "pixel":
             if CURL_STR in self.mode:
                 is_v2 = CURL2_STR in self.mode
-                obs, action, reward, next_obs, not_done, cpc_kwargs = replay_buffer.sample_cpc(use_v2=is_v2)
+                is_unique = "unique" in self.mode
+                (
+                    obs,
+                    action,
+                    reward,
+                    next_obs,
+                    not_done,
+                    cpc_kwargs,
+                ) = replay_buffer.sample_cpc(use_v2=is_v2, use_unique=is_unique)
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                     self.augs_funcs
@@ -569,9 +587,9 @@ class RadSacAgent(object):
             )
 
         if step % self.cpc_update_freq == 0 and CURL_STR in self.mode:
-            anchor = cpc_kwargs['obs_anchor']
-            pos = cpc_kwargs['obs_pos']
-            self.update_cpc(obs_anchor=anchor, obs_pos=pos, L=L, step=step)
+            self.update_cpc(
+                obs_anchor=cpc_kwargs["obs_anchor"], obs_pos=cpc_kwargs["obs_pos"], L=L, step=step, use_SE="SE" in self.mode
+            )
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
