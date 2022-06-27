@@ -71,8 +71,11 @@ class ReplayBuffer(Dataset):
         device,
         image_size=84,
         pre_image_size=84,
+        cpc_batch_size=None,
         transform=None,
     ):
+        if cpc_batch_size is None:
+            self.cpc_batch_size = batch_size
         self.capacity = capacity
         self.batch_size = batch_size
         self.device = device
@@ -124,8 +127,20 @@ class ReplayBuffer(Dataset):
             0, self.capacity if self.full else self.idx, size=self.batch_size
         )
 
+        if use_unique:
+            _, unique_idxs = np.unique(self.actions, axis=0, return_index=True)
+            obses_contrastive = self.obses[unique_idxs]
+        else:
+            obses_contrastive = self.obses
+
+        cpc_idxs = np.random.randint(
+            0, len(obses_contrastive), size=self.cpc_batch_size
+        )
+
         obses = self.obses[idxs]
         next_obses = self.next_obses[idxs]
+        anchor = obses_contrastive[cpc_idxs]
+        pos = anchor.copy()
 
         if use_v2:
             obses, translate_idxs = random_translate(
@@ -134,27 +149,13 @@ class ReplayBuffer(Dataset):
             next_obses = random_translate(
                 imgs=next_obses, size=self.image_size, **translate_idxs
             )
-            if use_unique:
-                _, unique_idxs = np.unique(self.actions, axis=0, return_index=True)
-                batch_sz = (
-                    self.batch_size
-                    if len(unique_idxs) > self.batch_size
-                    else len(unique_idxs)
-                )
-                selected_unique_idxs = np.random.choice(
-                    unique_idxs, replace=False, size=batch_sz
-                )
-                selected_obs = self.obses[selected_unique_idxs]
-                anchor = random_translate(selected_obs.copy(), self.image_size)
-                pos = random_translate(selected_obs.copy(), self.image_size)
-            else:
-                pos = random_translate(obses.copy(), self.image_size)
-                anchor = obses
+            anchor = random_translate(imgs=anchor, size=self.image_size)
+            pos = random_translate(imgs=pos, size=self.image_size)
         else:
-            obses = random_crop(obses.copy(), self.image_size)
+            obses = random_crop(obses, self.image_size)
             next_obses = random_crop(next_obses, self.image_size)
             pos = random_crop(pos, self.image_size)
-            anchor = obses
+            anchor = random_crop(anchor, self.image_size)
 
         obses = torch.as_tensor(obses, device=self.device).float()
         next_obses = torch.as_tensor(next_obses, device=self.device).float()

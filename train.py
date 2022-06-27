@@ -29,6 +29,7 @@ def parse_args():
     parser.add_argument("--init_steps", default=1000, type=int)
     parser.add_argument("--num_train_steps", default=1000000, type=int)
     parser.add_argument("--batch_size", default=32, type=int)
+    parser.add_argument("--cpc_batch_size", default=32, type=int)
     parser.add_argument("--hidden_dim", default=1024, type=int)
     # eval
     parser.add_argument("--eval_freq", default=1000, type=int)
