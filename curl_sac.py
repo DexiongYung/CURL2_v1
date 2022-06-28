@@ -510,9 +510,7 @@ class RadSacAgent(object):
         if obs.shape[-1] > self.image_size:
             obs = utils.center_crop_image(obs, self.image_size)
         elif obs.shape[-1] < self.image_size:
-            obs = utils.center_crop_image(
-                obs, image=self.image_size, output_size=obs.shape[-1]
-            )
+            obs = utils.center_crop_image(image=obs, output_size=obs.shape[-1])
             obs = utils.center_translate(image=obs, size=self.image_size)
 
         return obs

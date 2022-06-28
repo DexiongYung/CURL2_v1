@@ -208,7 +208,7 @@ def main():
     )
 
     pre_transform_image_size = (
-        args.pre_transform_image_size if "crop" in args.data_augs else args.image_size
+        args.pre_transform_image_size
     )
     pre_image_size = (
         args.pre_transform_image_size
