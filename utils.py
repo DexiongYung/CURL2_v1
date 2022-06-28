@@ -122,20 +122,21 @@ class ReplayBuffer(Dataset):
         return obses, actions, rewards, next_obses, not_dones
 
     def sample_contrastive(self, use_v2=False, use_unique=False, use_max=False):
-        idxs = np.random.randint(
-            0, self.capacity if self.full else self.idx, size=self.batch_size
-        )
+        max_buffer_sz = self.capacity if self.full else self.idx
+        idxs = np.random.randint(0, max_buffer_sz, size=self.cpc_batch_size)
 
         if use_unique:
-            _, unique_idxs = np.unique(self.actions, axis=0, return_index=True)
+            _, unique_idxs = np.unique(
+                self.actions[:max_buffer_sz], axis=0, return_index=True
+            )
             obses_contrastive = self.obses[unique_idxs]
         elif use_max:
-            _, unique_idxs = np.unique(self.actions, axis=0, return_index=True)
-            uniq_actions_subset = self.actions[unique_idxs]
-            cos_sims = cosine_similarity(X=uniq_actions_subset, Y=uniq_actions_subset)
+            cos_sims = cosine_similarity(
+                X=self.actions[:max_buffer_sz], Y=self.actions[:max_buffer_sz]
+            )
             cos_sims_mu = np.mean(a=cos_sims, axis=1)
-            partition_idxs = np.argpartition(cos_sims_mu, -self.batch_size)[
-                -self.batch_size :
+            partition_idxs = np.argpartition(cos_sims_mu, self.cpc_batch_size)[
+                : self.cpc_batch_size
             ]
             obses_contrastive = self.obses[partition_idxs]
         else:
