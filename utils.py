@@ -130,7 +130,9 @@ class ReplayBuffer(Dataset):
             _, unique_idxs = np.unique(self.actions, axis=0, return_index=True)
             obses_contrastive = self.obses[unique_idxs]
         elif use_max:
-            cos_sims = cosine_similarity(X=self.actions, Y=self.actions)
+            _, unique_idxs = np.unique(self.actions, axis=0, return_index=True)
+            uniq_actions_subset = self.actions[unique_idxs]
+            cos_sims = cosine_similarity(X=uniq_actions_subset, Y=uniq_actions_subset)
             cos_sims_mu = np.mean(a=cos_sims, axis=1)
             partition_idxs = np.argpartition(cos_sims_mu, -self.batch_size)[
                 -self.batch_size :
