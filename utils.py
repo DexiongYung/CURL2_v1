@@ -5,9 +5,8 @@ import gym
 import os
 from collections import deque
 import random
-from torch.utils.data import Dataset, DataLoader
-import time
-from skimage.util.shape import view_as_windows
+from torch.utils.data import Dataset
+from sklearn.metrics.pairwise import cosine_similarity
 from data_augs import random_crop, random_translate
 
 
@@ -122,7 +121,7 @@ class ReplayBuffer(Dataset):
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
         return obses, actions, rewards, next_obses, not_dones
 
-    def sample_contrastive(self, use_v2=False, use_unique=False):
+    def sample_contrastive(self, use_v2=False, use_unique=False, use_max=False):
         idxs = np.random.randint(
             0, self.capacity if self.full else self.idx, size=self.batch_size
         )
@@ -130,6 +129,13 @@ class ReplayBuffer(Dataset):
         if use_unique:
             _, unique_idxs = np.unique(self.actions, axis=0, return_index=True)
             obses_contrastive = self.obses[unique_idxs]
+        elif use_max:
+            cos_sims = cosine_similarity(X=self.actions, Y=self.actions)
+            cos_sims_mu = np.mean(a=cos_sims, axis=1)
+            partition_idxs = np.argpartition(cos_sims_mu, -self.batch_size)[
+                -self.batch_size :
+            ]
+            obses_contrastive = self.obses[partition_idxs]
         else:
             obses_contrastive = self.obses
 

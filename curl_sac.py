@@ -700,6 +700,11 @@ class RadSacAgent(object):
             if any(word in self.mode for word in CONTRASTIVE_METHODS):
                 is_v2 = any(word in self.mode for word in V2_METHODS)
                 is_unique = "unique" in self.mode
+                is_max = "max" in self.mode
+
+                if is_max and is_unique:
+                    raise ValueError("'unique' and 'max' cannot both be set in 'mode'")
+
                 (
                     obs,
                     action,
@@ -707,7 +712,7 @@ class RadSacAgent(object):
                     next_obs,
                     not_done,
                     contrastive_kwargs,
-                ) = replay_buffer.sample_contrastive(use_v2=is_v2, use_unique=is_unique)
+                ) = replay_buffer.sample_contrastive(use_v2=is_v2, use_unique=is_unique, use_max=is_max)
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                     self.augs_funcs
