@@ -13,6 +13,10 @@ LOG_FREQ = 10000
 CURL_STR = "CURL"
 CURL2_STR = "CURL2"
 BYOL_STR = "BYOL"
+SIMCLR_STR = "SIMCLR"
+
+CONTRASTIVE_METHODS = [CURL_STR, CURL2_STR, BYOL_STR, SIMCLR_STR]
+V2_METHODS = [CURL2_STR, BYOL_STR, SIMCLR_STR]
 
 AUG_TO_FUNC = {
     "crop": dict(func=rad.random_crop, params=dict(out=84)),
@@ -239,7 +243,6 @@ class CURL(nn.Module):
 
     def __init__(
         self,
-        obs_shape,
         z_dim,
         batch_size,
         critic,
@@ -286,6 +289,37 @@ class CURL(nn.Module):
         Wz = torch.matmul(self.W, z_pos.T)  # (z_dim,B)
         logits = torch.matmul(z_a, Wz)  # (B,B)
         logits = logits - torch.max(logits, 1)[0][:, None]
+        return logits
+
+
+class SIMCLR_projection_MLP(nn.Module):
+    def __init__(self, z_dim: int) -> None:
+        super(SIMCLR_projection_MLP, self).__init__()
+        self.net = nn.Sequential(
+            nn.Linear(z_dim, z_dim),
+            nn.BatchNorm1d(z_dim),
+            nn.ReLU(),
+            nn.Linear(z_dim, z_dim),
+            nn.BatchNorm1d(z_dim),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class SIMCLR(nn.Module):
+    def __init__(self, z_dim: int, critic: Critic) -> None:
+        super(SIMCLR, self).__init__()
+        self.encoder = critic.encoder
+        self.projection_head = SIMCLR_projection_MLP(z_dim=z_dim)
+
+    def encode(self, x):
+        return self.projection_head.forward(self.encoder(x))
+
+    def compute_logits(self, anchor, pos):
+        logits = nn.functional.cosine_similarity(
+            anchor[:, :, None], pos.t()[None, :, :]
+        )
         return logits
 
 
@@ -454,7 +488,6 @@ class RadSacAgent(object):
             if CURL_STR in self.mode:
                 # create CURL encoder (the 128 batch size is probably unnecessary)
                 self.CURL = CURL(
-                    obs_shape,
                     encoder_feature_dim,
                     self.latent_dim,
                     self.critic,
@@ -482,6 +515,16 @@ class RadSacAgent(object):
                     + list(self.BYOL.online_projection.parameters())
                     + list(self.BYOL.online_predict.parameters()),
                     lr=encoder_lr,
+                )
+            elif SIMCLR_STR in self.mode:
+                self.SIMCLR = SIMCLR(z_dim=encoder_feature_dim, critic=self.critic).to(
+                    device=device
+                )
+                self.encoder_optimizer = torch.optim.Adam(
+                    self.critic.encoder.parameters(), lr=encoder_lr
+                )
+                self.projection_optimizer = torch.optim.Adam(
+                    self.SIMCLR.parameters(), lr=encoder_lr
                 )
         self.cross_entropy_loss = nn.CrossEntropyLoss()
 
@@ -593,8 +636,8 @@ class RadSacAgent(object):
 
         # time flips
         """
-        time_pos = cpc_kwargs["time_pos"]
-        time_anchor= cpc_kwargs["time_anchor"]
+        time_pos = contrastive_kwargs["time_pos"]
+        time_anchor= contrastive_kwargs["time_anchor"]
         obs_anchor = torch.cat((obs_anchor, time_anchor), 0)
         obs_pos = torch.cat((obs_anchor, time_pos), 0)
         """
@@ -614,6 +657,31 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log("train/curl_loss", loss, step)
 
+    def update_SIMCLR(self, obs_anchor, obs_pos, L, step):
+
+        # time flips
+        """
+        time_pos = contrastive_kwargs["time_pos"]
+        time_anchor= contrastive_kwargs["time_anchor"]
+        obs_anchor = torch.cat((obs_anchor, time_anchor), 0)
+        obs_pos = torch.cat((obs_anchor, time_pos), 0)
+        """
+        z_a = self.SIMCLR.encode(obs_anchor)
+        z_pos = self.SIMCLR.encode(obs_pos)
+
+        logits = self.SIMCLR.compute_logits(z_a, z_pos)
+        labels = torch.arange(logits.shape[0]).long().to(self.device)
+        loss = self.cross_entropy_loss(logits, labels)
+
+        self.encoder_optimizer.zero_grad()
+        self.projection_optimizer.zero_grad()
+        loss.backward()
+        self.encoder_optimizer.step()
+        self.projection_optimizer.step()
+
+        if step % self.log_interval == 0:
+            L.log("train/NCE_loss", loss, step)
+
     def update_BYOL(self, obs_anchor, obs_pos, L, step):
         z_a = self.BYOL.encode(obs_anchor)
         z_pos = self.BYOL.encode(obs_pos, target=True)
@@ -629,8 +697,8 @@ class RadSacAgent(object):
 
     def update(self, replay_buffer, L, step):
         if self.encoder_type == "pixel":
-            if CURL_STR in self.mode or BYOL_STR in self.mode:
-                is_v2 = CURL2_STR in self.mode or BYOL_STR in self.mode
+            if any(word in self.mode for word in CONTRASTIVE_METHODS):
+                is_v2 = any(word in self.mode for word in V2_METHODS)
                 is_unique = "unique" in self.mode
                 (
                     obs,
@@ -638,8 +706,8 @@ class RadSacAgent(object):
                     reward,
                     next_obs,
                     not_done,
-                    cpc_kwargs,
-                ) = replay_buffer.sample_cpc(use_v2=is_v2, use_unique=is_unique)
+                    contrastive_kwargs,
+                ) = replay_buffer.sample_contrastive(use_v2=is_v2, use_unique=is_unique)
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                     self.augs_funcs
@@ -676,16 +744,23 @@ class RadSacAgent(object):
         if step % self.cpc_update_freq == 0:
             if CURL_STR in self.mode:
                 self.update_cpc(
-                    obs_anchor=cpc_kwargs["obs_anchor"],
-                    obs_pos=cpc_kwargs["obs_pos"],
+                    obs_anchor=contrastive_kwargs["obs_anchor"],
+                    obs_pos=contrastive_kwargs["obs_pos"],
                     L=L,
                     step=step,
                     use_SE="SE" in self.mode,
                 )
             elif BYOL_STR in self.mode:
                 self.update_BYOL(
-                    obs_anchor=cpc_kwargs["obs_anchor"],
-                    obs_pos=cpc_kwargs["obs_pos"],
+                    obs_anchor=contrastive_kwargs["obs_anchor"],
+                    obs_pos=contrastive_kwargs["obs_pos"],
+                    L=L,
+                    step=step,
+                )
+            elif SIMCLR_STR in self.mode:
+                self.update_SIMCLR(
+                    obs_anchor=contrastive_kwargs["obs_anchor"],
+                    obs_pos=contrastive_kwargs["obs_pos"],
                     L=L,
                     step=step,
                 )

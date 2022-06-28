@@ -14,6 +14,15 @@
             "args": ["--config_file", "./configs/translate.json"]
         },
         {
+            "name": "Train SIMCLR",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/cheetah_SIMCLR_unique.json"]
+        },
+        {
             "name": "Train Vanilla",
             "type": "python",
             "request": "launch",

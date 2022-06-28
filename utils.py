@@ -122,7 +122,7 @@ class ReplayBuffer(Dataset):
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
         return obses, actions, rewards, next_obses, not_dones
 
-    def sample_cpc(self, use_v2=False, use_unique=False):
+    def sample_contrastive(self, use_v2=False, use_unique=False):
         idxs = np.random.randint(
             0, self.capacity if self.full else self.idx, size=self.batch_size
         )
@@ -165,11 +165,11 @@ class ReplayBuffer(Dataset):
         anchor = torch.as_tensor(anchor, device=self.device).float()
         pos = torch.as_tensor(pos, device=self.device).float()
 
-        cpc_kwargs = dict(
+        contrastive_kwargs = dict(
             obs_anchor=anchor, obs_pos=pos, time_anchor=None, time_pos=None
         )
 
-        return obses, actions, rewards, next_obses, not_dones, cpc_kwargs
+        return obses, actions, rewards, next_obses, not_dones, contrastive_kwargs
 
     def sample_rad(self, aug_funcs, idxs=None, return_idxs=False, obs_only=False):
 

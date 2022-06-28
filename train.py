@@ -8,7 +8,7 @@ import dmc2gym
 import utils
 from logger import Logger
 from video import VideoRecorder
-from curl_sac import RadSacAgent
+from curl_sac import RadSacAgent, CONTRASTIVE_METHODS
 
 
 def parse_args():
@@ -199,6 +199,17 @@ def main():
         for key, value in config_dict.items():
             args.__dict__[key] = value
 
+    # Check if multiple contrastive methods are being applied. Only one contrastive method should be applied per agent.
+    method_found = False
+    for method_str in CONTRASTIVE_METHODS:
+        if method_str in args.mode:
+            if method_found:
+                raise ValueError(
+                    f"Found multiple methods in mode: {args.mode}. There should only be one of: {CONTRASTIVE_METHODS}"
+                )
+            else:
+                method_found = True
+
     if args.seed == -1:
         args.__dict__["seed"] = np.random.randint(1, 1000000)
     utils.set_seed_everywhere(args.seed)
@@ -207,9 +218,7 @@ def main():
         f"cuda:{args.device_id}" if torch.cuda.is_available() else "cpu"
     )
 
-    pre_transform_image_size = (
-        args.pre_transform_image_size
-    )
+    pre_transform_image_size = args.pre_transform_image_size
     pre_image_size = (
         args.pre_transform_image_size
     )  # record the pre transform image size for translation
