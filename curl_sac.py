@@ -668,9 +668,9 @@ class RadSacAgent(object):
 
             if BYOL_STR in self.mode:
                 utils.soft_update_params(
-                    self.BYOL.target_projection,
-                    self.BYOL.online_projection,
-                    self.encoder_tau,
+                    net=self.BYOL.online_projection,
+                    target_net=self.BYOL.target_projection,
+                    tau=self.encoder_tau,
                 )
 
         if step % self.cpc_update_freq == 0:
