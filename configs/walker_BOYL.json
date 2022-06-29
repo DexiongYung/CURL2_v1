@@ -42,7 +42,7 @@
     "save_video": true,
     "save_config": true,
     "seed": 23,
-    "mode": "BOYL",
+    "mode": "BYOL",
     "task_name": "walk",
     "work_dir": "./logs",
     "device_id": 0
