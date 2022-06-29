@@ -202,6 +202,9 @@ def main():
     # Check if multiple contrastive methods are being applied. Only one contrastive method should be applied per agent.
     method_found = False
     for method_str in CONTRASTIVE_METHODS:
+        if method_str == "CURL2":
+            continue
+        
         if method_str in args.mode:
             if method_found:
                 raise ValueError(
