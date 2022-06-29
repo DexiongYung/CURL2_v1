@@ -632,6 +632,22 @@ class RadSacAgent(object):
         alpha_loss.backward()
         self.log_alpha_optimizer.step()
 
+    def log_pos_and_neg_dist(self, z_anchor, z_pos, L, step):
+        with torch.no_grad():
+            b, _ = z_anchor.shape
+            cos_sim_matrix = F.cosine_similarity(
+                z_anchor[:, :, None], z_pos.t()[None, :, :]
+            )
+            pos_sim_mu = cos_sim_matrix.diagonal().mean()
+            mask = torch.eye(b, b).bool().to(device=z_anchor.get_device())
+            cos_sim_matrix_negs = cos_sim_matrix.masked_fill_(mask, 0)
+            neg_sum = cos_sim_matrix_negs.sum()
+            neg_sim_mu = neg_sum / (b * b - b)
+
+            if step % self.log_interval == 0:
+                L.log("train/pos_sample_avg_cos_similarity", pos_sim_mu, step)
+                L.log("train/neg_sample_avg_cos_similarity", neg_sim_mu, step)
+
     def update_cpc(self, obs_anchor, obs_pos, L, step, use_SE=False):
 
         # time flips
@@ -643,6 +659,8 @@ class RadSacAgent(object):
         """
         z_a = self.CURL.encode(obs_anchor)
         z_pos = self.CURL.encode(obs_pos, ema=not use_SE)
+
+        self.log_pos_and_neg_dist(z_anchor=z_a, z_pos=z_pos, L=L, step=step)
 
         logits = self.CURL.compute_logits(z_a, z_pos)
         labels = torch.arange(logits.shape[0]).long().to(self.device)
@@ -669,6 +687,8 @@ class RadSacAgent(object):
         z_a = self.SIMCLR.encode(obs_anchor)
         z_pos = self.SIMCLR.encode(obs_pos)
 
+        self.log_pos_and_neg_dist(z_anchor=z_a, z_pos=z_pos, L=L, step=step)
+
         logits = self.SIMCLR.compute_logits(z_a, z_pos)
         labels = torch.arange(logits.shape[0]).long().to(self.device)
         loss = self.cross_entropy_loss(logits, labels)
@@ -685,6 +705,8 @@ class RadSacAgent(object):
     def update_BYOL(self, obs_anchor, obs_pos, L, step):
         z_a = self.BYOL.encode(obs_anchor)
         z_pos = self.BYOL.encode(obs_pos, target=True)
+
+        self.log_pos_and_neg_dist(z_anchor=z_a, z_pos=z_pos, L=L, step=step)
 
         loss = self.BYOL.compute_L2_MSE(z_a=z_a, z_pos=z_pos).mean()
 
@@ -712,7 +734,9 @@ class RadSacAgent(object):
                     next_obs,
                     not_done,
                     contrastive_kwargs,
-                ) = replay_buffer.sample_contrastive(use_v2=is_v2, use_unique=is_unique, use_max=is_max)
+                ) = replay_buffer.sample_contrastive(
+                    use_v2=is_v2, use_unique=is_unique, use_max=is_max
+                )
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                     self.augs_funcs
