@@ -385,8 +385,6 @@ def random_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
 
 
 def instdisc(imgs):
-    b, c, h, w = imgs.shape
-
     imgs_rcj = kornia_color_jitter(
         imgs=imgs, bright=0.4, contrast=0.4, satur=0.2, hue=0.1, p=0.8
     )
