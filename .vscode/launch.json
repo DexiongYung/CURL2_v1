@@ -32,6 +32,15 @@
             "args": ["--config_file", "./configs/cheetah_BYOL_translate.json"]
         },
         {
+            "name": "Train BYOL translate double",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/cheetah_BYOL_translate_double.json"]
+        },
+        {
             "name": "Train BYOL crop",
             "type": "python",
             "request": "launch",
