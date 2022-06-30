@@ -570,18 +570,18 @@ class RadSacAgent(object):
         self.log_alpha_optimizer.step()
 
     def log_pos_and_neg_dist(self, z_anchor, z_pos, L, step, suffix=""):
-        with torch.no_grad():
-            b, _ = z_anchor.shape
-            cos_sim_matrix = F.cosine_similarity(
-                z_anchor[:, :, None], z_pos.t()[None, :, :]
-            )
-            pos_sim_mu = cos_sim_matrix.diagonal().mean()
-            mask = torch.eye(b, b).bool().to(device=z_anchor.get_device())
-            cos_sim_matrix_negs = cos_sim_matrix.masked_fill_(mask, 0)
-            neg_sum = cos_sim_matrix_negs.sum()
-            neg_sim_mu = neg_sum / (b * b - b)
+        if step % self.log_interval == 0:
+            with torch.no_grad():
+                b, _ = z_anchor.shape
+                cos_sim_matrix = F.cosine_similarity(
+                    z_anchor[:, :, None], z_pos.t()[None, :, :]
+                )
+                pos_sim_mu = cos_sim_matrix.diagonal().mean()
+                mask = torch.eye(b, b).bool().to(device=z_anchor.get_device())
+                cos_sim_matrix_negs = cos_sim_matrix.masked_fill_(mask, 0)
+                neg_sum = cos_sim_matrix_negs.sum()
+                neg_sim_mu = neg_sum / (b * b - b)
 
-            if step % self.log_interval == 0:
                 L.log(f"train/pos_sample_avg_cos_similarity{suffix}", pos_sim_mu, step)
                 L.log(f"train/neg_sample_avg_cos_similarity{suffix}", neg_sim_mu, step)
 
