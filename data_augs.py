@@ -385,6 +385,7 @@ def random_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
 
 
 def instdisc(imgs):
+    # TODO!!! Not fully done
     imgs_rcj = kornia_color_jitter(
         imgs=imgs, bright=0.4, contrast=0.4, satur=0.2, hue=0.1, p=0.8
     )
@@ -394,16 +395,16 @@ def instdisc(imgs):
     return imgs_flip
 
 
-def crop_translate(imgs, out, return_random_idxs=False, h1s=None, w1s=None):
-    _, _, h, _ = imgs.shape
-    cropped_imgs = random_crop(imgs=imgs, out=out)
-    return random_translate(
-        imgs=cropped_imgs,
-        size=h,
-        return_random_idxs=return_random_idxs,
-        h1s=h1s,
-        w1s=w1s,
-    )
+# def crop_translate(imgs, out, return_random_idxs=False, h1s=None, w1s=None):
+#     _, _, h, _ = imgs.shape
+#     cropped_imgs = random_crop(imgs=imgs, out=out)
+#     return random_translate(
+#         imgs=cropped_imgs,
+#         size=h,
+#         return_random_idxs=return_random_idxs,
+#         h1s=h1s,
+#         w1s=w1s,
+#     )
 
 
 # def translate_center_crop(

@@ -204,7 +204,7 @@ def main():
     for method_str in CONTRASTIVE_METHODS:
         if method_str == "CURL2":
             continue
-        
+
         if method_str in args.mode:
             if method_found:
                 raise ValueError(

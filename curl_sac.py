@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 import utils
 from encoder import make_encoder
+from contrastive_models import BYOL, SimCLR, CURL2
 import data_augs as rad
 
 LOG_FREQ = 10000
@@ -16,31 +17,6 @@ BYOL_STR = "BYOL"
 SIMCLR_STR = "SIMCLR"
 
 CONTRASTIVE_METHODS = [CURL_STR, CURL2_STR, BYOL_STR, SIMCLR_STR]
-V2_METHODS = [CURL2_STR, BYOL_STR, SIMCLR_STR]
-
-AUG_TO_FUNC = {
-    "crop": dict(func=rad.random_crop, params=dict(out=84)),
-    "grayscale": dict(func=rad.random_grayscale, params=dict(p=0.3)),
-    "cutout": dict(func=rad.random_cutout, params=dict(min_cut=10, max_cut=30)),
-    "cutout_color": dict(
-        func=rad.random_cutout_color, params=dict(min_cut=10, max_cut=30)
-    ),
-    "flip": dict(func=rad.random_flip, params=dict(p=0.2)),
-    "rotate": dict(func=rad.random_rotation, params=dict(p=0.3)),
-    "rand_conv": dict(func=rad.random_convolution, params=dict()),
-    "color_jitter": dict(
-        func=rad.random_color_jitter,
-        params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5),
-    ),
-    "translate": dict(func=rad.random_translate, params=dict()),
-    "random_resize_crop": dict(func=rad.random_resize_crop, params=dict()),
-    "kornia_jitter": dict(
-        func=rad.kornia_color_jitter,
-        params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5),
-    ),
-    "instdisc": dict(func=rad.instdisc, params=dict()),
-    "no_aug": dict(func=rad.no_aug, params=dict()),
-}
 
 
 def gaussian_logprob(noise, log_std):
@@ -292,85 +268,6 @@ class CURL(nn.Module):
         return logits
 
 
-class SIMCLR_projection_MLP(nn.Module):
-    def __init__(self, z_dim: int) -> None:
-        super(SIMCLR_projection_MLP, self).__init__()
-        self.net = nn.Sequential(
-            nn.Linear(z_dim, z_dim),
-            nn.BatchNorm1d(z_dim),
-            nn.ReLU(),
-            nn.Linear(z_dim, z_dim),
-            nn.BatchNorm1d(z_dim),
-        )
-
-    def forward(self, x):
-        return self.net(x)
-
-
-class SIMCLR(nn.Module):
-    def __init__(self, z_dim: int, critic: Critic) -> None:
-        super(SIMCLR, self).__init__()
-        self.encoder = critic.encoder
-        self.projection_head = SIMCLR_projection_MLP(z_dim=z_dim)
-
-    def encode(self, x):
-        return self.projection_head.forward(self.encoder(x))
-
-    def compute_logits(self, anchor, pos):
-        logits = nn.functional.cosine_similarity(
-            anchor[:, :, None], pos.t()[None, :, :]
-        )
-        return logits
-
-
-class BYOL_projection_MLP(nn.Module):
-    def __init__(self, z_dim: int) -> None:
-        super(BYOL_projection_MLP, self).__init__()
-        self.net = nn.Sequential(
-            nn.Linear(z_dim, z_dim),
-            nn.BatchNorm1d(z_dim),
-            nn.ReLU(),
-            nn.Linear(z_dim, z_dim),
-        )
-
-    def forward(self, x):
-        return self.net(x)
-
-
-class BYOL(nn.Module):
-    def __init__(
-        self,
-        z_dim,
-        critic,
-        critic_target,
-    ):
-        super(BYOL, self).__init__()
-        self.encoder = critic.encoder
-        self.encoder_target = critic_target.encoder
-        self.online_projection = BYOL_projection_MLP(z_dim=z_dim)
-        self.target_projection = BYOL_projection_MLP(z_dim=z_dim)
-        self.online_predict = BYOL_projection_MLP(z_dim=z_dim)
-
-    def encode(self, x, detach=False, target=False):
-        if target:
-            with torch.no_grad():
-                z_out = self.encoder_target(x)
-                z_fin = self.target_projection(z_out)
-        else:
-            z_out = self.encoder(x)
-            z_proj = self.online_projection(z_out)
-            z_fin = self.online_predict(z_proj)
-
-        if detach:
-            z_fin = z_fin.detach()
-        return z_fin
-
-    def compute_L2_MSE(self, z_a, z_pos):
-        z_a_norm = F.normalize(z_a, dim=-1, p=2)
-        z_pos_norm = F.normalize(z_pos, dim=-1, p=2)
-        return 2 - 2 * (z_a_norm * z_pos_norm).sum(dim=-1)
-
-
 class RadSacAgent(object):
     """RAD with SAC."""
 
@@ -421,10 +318,32 @@ class RadSacAgent(object):
         self.data_augs = data_augs
         self.mode = mode
 
+        aug_to_func = {
+            "crop": dict(func=rad.random_crop, params=dict(out=self.image_size)),
+            "grayscale": dict(func=rad.random_grayscale, params=dict(p=0.3)),
+            "cutout": dict(func=rad.random_cutout, params=dict(min_cut=10, max_cut=30)),
+            "cutout_color": dict(
+                func=rad.random_cutout_color, params=dict(min_cut=10, max_cut=30)
+            ),
+            "flip": dict(func=rad.random_flip, params=dict(p=0.2)),
+            "rotate": dict(func=rad.random_rotation, params=dict(p=0.3)),
+            "rand_conv": dict(func=rad.random_convolution, params=dict()),
+            "translate": dict(
+                func=rad.random_translate, params=dict(size=self.image_size)
+            ),
+            "random_resize_crop": dict(func=rad.random_resize_crop, params=dict()),
+            "kornia_jitter": dict(
+                func=rad.kornia_color_jitter,
+                params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5),
+            ),
+            "instdisc": dict(func=rad.instdisc, params=dict()),
+            "no_aug": dict(func=rad.no_aug, params=dict()),
+        }
+
         self.augs_funcs = {}
         for aug_name in self.data_augs.split("-"):
-            assert aug_name in AUG_TO_FUNC, "invalid data aug string"
-            self.augs_funcs[aug_name] = AUG_TO_FUNC[aug_name]
+            assert aug_name in aug_to_func, "invalid data aug string"
+            self.augs_funcs[aug_name] = aug_to_func[aug_name]
 
         print(f"Aug set: {self.augs_funcs}")
         print(f"Mode is: {self.mode}")
@@ -485,7 +404,25 @@ class RadSacAgent(object):
         )
 
         if self.encoder_type == "pixel":
-            if CURL_STR in self.mode:
+            if CURL2_STR in self.mode:
+                self.CURL = CURL2(
+                    z_dim=encoder_feature_dim,
+                    batch_size=self.latent_dim,
+                    critic=self.critic,
+                    critic_target=self.critic_target,
+                    output_type="continuous",
+                )
+
+                self.encoder_optimizer = torch.optim.Adam(
+                    self.critic.encoder.parameters(), lr=encoder_lr
+                )
+
+                self.cpc_optimizer = torch.optim.Adam(
+                    [self.CURL.W] + list(self.CURL.online_encoder.parameters()),
+                    lr=encoder_lr,
+                )
+                self.CURL.to(device=self.device)
+            elif CURL_STR in self.mode:
                 # create CURL encoder (the 128 batch size is probably unnecessary)
                 self.CURL = CURL(
                     encoder_feature_dim,
@@ -517,7 +454,7 @@ class RadSacAgent(object):
                     lr=encoder_lr,
                 )
             elif SIMCLR_STR in self.mode:
-                self.SIMCLR = SIMCLR(z_dim=encoder_feature_dim, critic=self.critic).to(
+                self.SIMCLR = SimCLR(z_dim=encoder_feature_dim, critic=self.critic).to(
                     device=device
                 )
                 self.encoder_optimizer = torch.optim.Adam(
@@ -632,7 +569,7 @@ class RadSacAgent(object):
         alpha_loss.backward()
         self.log_alpha_optimizer.step()
 
-    def log_pos_and_neg_dist(self, z_anchor, z_pos, L, step):
+    def log_pos_and_neg_dist(self, z_anchor, z_pos, L, step, suffix=""):
         with torch.no_grad():
             b, _ = z_anchor.shape
             cos_sim_matrix = F.cosine_similarity(
@@ -645,10 +582,10 @@ class RadSacAgent(object):
             neg_sim_mu = neg_sum / (b * b - b)
 
             if step % self.log_interval == 0:
-                L.log("train/pos_sample_avg_cos_similarity", pos_sim_mu, step)
-                L.log("train/neg_sample_avg_cos_similarity", neg_sim_mu, step)
+                L.log(f"train/pos_sample_avg_cos_similarity{suffix}", pos_sim_mu, step)
+                L.log(f"train/neg_sample_avg_cos_similarity{suffix}", neg_sim_mu, step)
 
-    def update_cpc(self, obs_anchor, obs_pos, L, step, use_SE=False):
+    def update_cpc(self, obs_anchor, obs_pos, L, step, is_double=False):
 
         # time flips
         """
@@ -658,7 +595,7 @@ class RadSacAgent(object):
         obs_pos = torch.cat((obs_anchor, time_pos), 0)
         """
         z_a = self.CURL.encode(obs_anchor)
-        z_pos = self.CURL.encode(obs_pos, ema=not use_SE)
+        z_pos = self.CURL.encode(obs_pos, ema=True)
 
         self.log_pos_and_neg_dist(z_anchor=z_a, z_pos=z_pos, L=L, step=step)
 
@@ -666,16 +603,29 @@ class RadSacAgent(object):
         labels = torch.arange(logits.shape[0]).long().to(self.device)
         loss = self.cross_entropy_loss(logits, labels)
 
+        if is_double:
+            z_a = self.CURL.encode(obs_pos)
+            z_pos = self.CURL.encode(obs_anchor, ema=True)
+
+            self.log_pos_and_neg_dist(
+                z_anchor=z_a, z_pos=z_pos, L=L, step=step, suffix="_reverse"
+            )
+
+            logits = self.CURL.compute_logits(z_a, z_pos)
+            labels = torch.arange(logits.shape[0]).long().to(self.device)
+            loss += self.cross_entropy_loss(logits, labels)
+            loss /= 2
+
         self.encoder_optimizer.zero_grad()
         self.cpc_optimizer.zero_grad()
         loss.backward()
-
         self.encoder_optimizer.step()
         self.cpc_optimizer.step()
+
         if step % self.log_interval == 0:
             L.log("train/curl_loss", loss, step)
 
-    def update_SIMCLR(self, obs_anchor, obs_pos, L, step):
+    def update_SIMCLR(self, obs_anchor, obs_pos, L, step, is_double=False):
 
         # time flips
         """
@@ -693,6 +643,19 @@ class RadSacAgent(object):
         labels = torch.arange(logits.shape[0]).long().to(self.device)
         loss = self.cross_entropy_loss(logits, labels)
 
+        if is_double:
+            z_a = self.SIMCLR.encode(obs_pos)
+            z_pos = self.SIMCLR.encode(obs_anchor)
+
+            self.log_pos_and_neg_dist(
+                z_anchor=z_a, z_pos=z_pos, L=L, step=step, suffix="_reverse"
+            )
+
+            logits = self.SIMCLR.compute_logits(z_a, z_pos)
+            labels = torch.arange(logits.shape[0]).long().to(self.device)
+            loss += self.cross_entropy_loss(logits, labels)
+            loss /= 2
+
         self.encoder_optimizer.zero_grad()
         self.projection_optimizer.zero_grad()
         loss.backward()
@@ -702,13 +665,24 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log("train/NCE_loss", loss, step)
 
-    def update_BYOL(self, obs_anchor, obs_pos, L, step):
+    def update_BYOL(self, obs_anchor, obs_pos, L, step, is_double=False):
         z_a = self.BYOL.encode(obs_anchor)
         z_pos = self.BYOL.encode(obs_pos, target=True)
 
         self.log_pos_and_neg_dist(z_anchor=z_a, z_pos=z_pos, L=L, step=step)
 
         loss = self.BYOL.compute_L2_MSE(z_a=z_a, z_pos=z_pos).mean()
+
+        if is_double:
+            z_a = self.BYOL.encode(obs_pos)
+            z_pos = self.BYOL.encode(obs_anchor, target=True)
+
+            self.log_pos_and_neg_dist(
+                z_anchor=z_a, z_pos=z_pos, L=L, step=step, suffix="_reverse"
+            )
+
+            loss += self.BYOL.compute_L2_MSE(z_a=z_a, z_pos=z_pos).mean()
+            loss /= 2
 
         self.encoder_optimizer.zero_grad()
         loss.backward()
@@ -720,13 +694,8 @@ class RadSacAgent(object):
     def update(self, replay_buffer, L, step):
         if self.encoder_type == "pixel":
             if any(word in self.mode for word in CONTRASTIVE_METHODS):
-                is_v2 = any(word in self.mode for word in V2_METHODS)
-                is_unique = "unique" in self.mode
                 is_max = "max" in self.mode
-
-                if is_max and is_unique:
-                    raise ValueError("'unique' and 'max' cannot both be set in 'mode'")
-
+                is_translate = "translate" in self.mode
                 (
                     obs,
                     action,
@@ -735,7 +704,7 @@ class RadSacAgent(object):
                     not_done,
                     contrastive_kwargs,
                 ) = replay_buffer.sample_contrastive(
-                    use_v2=is_v2, use_unique=is_unique, use_max=is_max
+                    use_translate=is_translate, use_max=is_max
                 )
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
@@ -769,15 +738,22 @@ class RadSacAgent(object):
                     target_net=self.BYOL.target_projection,
                     tau=self.encoder_tau,
                 )
+            elif CURL2_STR in self.mode:
+                utils.soft_update_params(
+                    net=self.CURL.online_encoder,
+                    target_net=self.CURL.target_encoder,
+                    tau=self.encoder_tau,
+                )
 
         if step % self.cpc_update_freq == 0:
+            is_double = "double" in self.mode
             if CURL_STR in self.mode:
                 self.update_cpc(
                     obs_anchor=contrastive_kwargs["obs_anchor"],
                     obs_pos=contrastive_kwargs["obs_pos"],
                     L=L,
                     step=step,
-                    use_SE="SE" in self.mode,
+                    is_double=is_double,
                 )
             elif BYOL_STR in self.mode:
                 self.update_BYOL(
@@ -785,6 +761,7 @@ class RadSacAgent(object):
                     obs_pos=contrastive_kwargs["obs_pos"],
                     L=L,
                     step=step,
+                    is_double=is_double,
                 )
             elif SIMCLR_STR in self.mode:
                 self.update_SIMCLR(
@@ -792,6 +769,7 @@ class RadSacAgent(object):
                     obs_pos=contrastive_kwargs["obs_pos"],
                     L=L,
                     step=step,
+                    is_double=is_double,
                 )
 
     def save(self, model_dir, step):

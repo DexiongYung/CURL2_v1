@@ -121,16 +121,11 @@ class ReplayBuffer(Dataset):
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
         return obses, actions, rewards, next_obses, not_dones
 
-    def sample_contrastive(self, use_v2=False, use_unique=False, use_max=False):
+    def sample_contrastive(self, use_translate=False, use_max=False):
         max_buffer_sz = self.capacity if self.full else self.idx
         idxs = np.random.randint(0, max_buffer_sz, size=self.cpc_batch_size)
 
-        if use_unique:
-            _, unique_idxs = np.unique(
-                self.actions[:max_buffer_sz], axis=0, return_index=True
-            )
-            obses_contrastive = self.obses[unique_idxs]
-        elif use_max:
+        if use_max:
             cos_sims = cosine_similarity(
                 X=self.actions[:max_buffer_sz], Y=self.actions[:max_buffer_sz]
             )
@@ -151,7 +146,7 @@ class ReplayBuffer(Dataset):
         anchor = obses_contrastive[cpc_idxs]
         pos = anchor.copy()
 
-        if use_v2:
+        if use_translate:
             obses, translate_idxs = random_translate(
                 imgs=obses, size=self.image_size, return_random_idxs=True
             )

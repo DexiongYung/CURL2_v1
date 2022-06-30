@@ -24,8 +24,8 @@
     "eval_freq": 5000,
     "frame_stack": 3,
     "hidden_dim": 1024,
-    "id": "CURL2_SE",
-    "image_size": 108,
+    "id": "BOYL_crop",
+    "image_size": 84,
     "init_steps": 1000,
     "init_temperature": 0.1,
     "latent_dim": 128,
@@ -43,7 +43,7 @@
     "save_config": true,
     "seed": 23,
     "task_name": "run",
-    "mode": "CURL2_unique_SE",
+    "mode": "BYOL",
     "work_dir": "./logs",
     "device_id": 0
 }
