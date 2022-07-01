@@ -271,7 +271,9 @@ def main():
 
     os.makedirs(work_dir, exist_ok=True)
     with open(os.path.join(work_dir, "args.json"), "w") as f:
-        json.dump(vars(args), f, sort_keys=True, indent=4)
+        json_dict = vars(args)
+        json_dict["checkpoint_dir"] = checkpoint_dir
+        json.dump(json_dict, f, sort_keys=True, indent=4)
 
     action_shape = env.action_space.shape
 
