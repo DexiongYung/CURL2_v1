@@ -17,8 +17,8 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_file", type=str)
     parser.add_argument("--actor_ckpt_path", type=str)
-    parser.add_argument("--num_samples", type=int, default=512)
-    parser.add_argument("--sample_percent", type=float, default=1)
+    parser.add_argument("--total_samples", type=int, default=2000)
+    parser.add_argument("--num_random_samples", type=int, default=1000)
     parser.add_argument("--out_dir", type=str, default="t_SNE")
     args = parser.parse_args()
     return args
@@ -75,20 +75,20 @@ def main():
     # )
     done = True
 
-    for _ in range(args.num_samples):
+    for step in range(args.total_samples):
         if done:
             obs = env.reset()
             done = False
 
         with eval_mode(agent):
-            sample = np.random.random_sample()
-            if sample > args.sample_percent:
+            if step > args.num_random_samples:
                 action = agent.select_action(obs / 255.0)
             else:
-                action = agent.sample_action(obs / 255.0)
+                action = env.action_space.sample()
 
         next_obs, reward, done, _ = env.step(action)
         replay_buffer.add(obs, action, reward, next_obs, done)
+        obs = next_obs
 
     obses = replay_buffer.obses[: replay_buffer.idx]
     obses = agent.reshape_obses_for_actor(obs=obses)
@@ -103,7 +103,7 @@ def main():
         actions = relu(out_trunk_LL_3)
 
     fig, axes = plt.subplots(1, 5, figsize=(15, 5), sharey=True)
-    fig.suptitle("t-SNE")
+    fig.suptitle("PCA")
 
     # labels = np.zeros(actions.shape[0])
 
@@ -123,7 +123,7 @@ def main():
     )
     create_PCA_subplot(z_tensor=actions, index=4, title="actions", axes=axes)
 
-    plt.savefig("test.png")
+    plt.savefig(f"cheetah_run_translate.png")
 
 
 if __name__ == "__main__":
