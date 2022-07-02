@@ -1,13 +1,108 @@
+import json
 import torch
 import numpy as np
-import torch.nn as nn
+import dmc2gym
 import gym
 import os
 from collections import deque
 import random
 from torch.utils.data import Dataset
+from curl_sac import RadSacAgent
 from sklearn.metrics.pairwise import cosine_similarity
 from data_augs import random_crop, random_translate
+
+
+def set_json_to_args(args, config_path):
+    config_dict = json.load(open(config_path))
+    for key, value in config_dict.items():
+        args.__dict__[key] = value
+
+    return args
+
+
+def create_env_and_replay_buffer(args, device):
+    pre_transform_image_size = args.pre_transform_image_size
+    pre_image_size = (
+        args.pre_transform_image_size
+    )  # record the pre transform image size for translation
+
+    env = dmc2gym.make(
+        domain_name=args.domain_name,
+        task_name=args.task_name,
+        seed=args.seed,
+        visualize_reward=False,
+        from_pixels=(args.encoder_type == "pixel"),
+        height=pre_transform_image_size,
+        width=pre_transform_image_size,
+        frame_skip=args.action_repeat,
+    )
+
+    env.seed(args.seed)
+
+    # stack several consecutive frames together
+    if args.encoder_type == "pixel":
+        env = FrameStack(env, k=args.frame_stack)
+
+        action_shape = env.action_space.shape
+
+    if args.encoder_type == "pixel":
+        obs_shape = (3 * args.frame_stack, args.image_size, args.image_size)
+        pre_aug_obs_shape = (
+            3 * args.frame_stack,
+            pre_transform_image_size,
+            pre_transform_image_size,
+        )
+    else:
+        obs_shape = env.observation_space.shape
+        pre_aug_obs_shape = obs_shape
+
+    replay_buffer = ReplayBuffer(
+        obs_shape=pre_aug_obs_shape,
+        action_shape=action_shape,
+        capacity=args.replay_buffer_capacity,
+        batch_size=args.batch_size,
+        device=device,
+        image_size=args.image_size,
+        pre_image_size=pre_image_size,
+    )
+
+    return env, replay_buffer
+
+
+def make_agent(obs_shape, action_shape, args, device):
+    if args.agent == "rad_sac":
+        return RadSacAgent(
+            obs_shape=obs_shape,
+            action_shape=action_shape,
+            device=device,
+            hidden_dim=args.hidden_dim,
+            discount=args.discount,
+            init_temperature=args.init_temperature,
+            alpha_lr=args.alpha_lr,
+            alpha_beta=args.alpha_beta,
+            actor_lr=args.actor_lr,
+            actor_beta=args.actor_beta,
+            actor_log_std_min=args.actor_log_std_min,
+            actor_log_std_max=args.actor_log_std_max,
+            actor_update_freq=args.actor_update_freq,
+            critic_lr=args.critic_lr,
+            critic_beta=args.critic_beta,
+            critic_tau=args.critic_tau,
+            critic_target_update_freq=args.critic_target_update_freq,
+            encoder_type=args.encoder_type,
+            encoder_feature_dim=args.encoder_feature_dim,
+            encoder_lr=args.encoder_lr,
+            encoder_tau=args.encoder_tau,
+            num_layers=args.num_layers,
+            num_filters=args.num_filters,
+            log_interval=args.log_interval,
+            detach_encoder=args.detach_encoder,
+            latent_dim=args.latent_dim,
+            data_augs=args.data_augs,
+            mode=args.mode,
+        )
+    else:
+        assert "agent is not supported: %s" % args.agent
 
 
 class eval_mode(object):

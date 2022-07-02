@@ -486,28 +486,38 @@ class RadSacAgent(object):
     def alpha(self):
         return self.log_alpha.exp()
 
-    def reshape_action(self, obs):
+    def reshape_obs_for_actor(self, obs):
         if obs.shape[-1] > self.image_size:
             obs = utils.center_crop_image(obs, self.image_size)
         elif obs.shape[-1] < self.image_size:
             obs = utils.center_crop_image(image=obs, output_size=obs.shape[-1])
             obs = utils.center_translate(image=obs, size=self.image_size)
 
+        obs = torch.FloatTensor(obs).to(self.device)
+        obs = obs.unsqueeze(0)
+
+        return obs
+
+    def reshape_obses_for_actor(self, obs):
+        if obs.shape[-1] > self.image_size:
+            obs = utils.center_crop_images(obs, self.image_size)
+        elif obs.shape[-1] < self.image_size:
+            obs = utils.center_crop_images(image=obs, output_size=obs.shape[-1])
+            obs = utils.center_translates(image=obs, size=self.image_size)
+
+        obs = torch.FloatTensor(obs).to(self.device)
+
         return obs
 
     def select_action(self, obs):
-        obs = self.reshape_action(obs=obs)
+        obs = self.reshape_obs_for_actor(obs=obs)
         with torch.no_grad():
-            obs = torch.FloatTensor(obs).to(self.device)
-            obs = obs.unsqueeze(0)
             mu, _, _, _ = self.actor(obs, compute_pi=False, compute_log_pi=False)
             return mu.cpu().data.numpy().flatten()
 
     def sample_action(self, obs):
-        obs = self.reshape_action(obs=obs)
+        obs = self.reshape_obs_for_actor(obs=obs)
         with torch.no_grad():
-            obs = torch.FloatTensor(obs).to(self.device)
-            obs = obs.unsqueeze(0)
             mu, pi, _, _ = self.actor(obs, compute_log_pi=False)
             return pi.cpu().data.numpy().flatten()
 

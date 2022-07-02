@@ -6,7 +6,8 @@ import numpy as np
 
 def run_eval(env, agent, video, video_enabled, args, sample_stochastically=False):
     obs = env.reset()
-    video.init(enabled=(video_enabled))
+    if video is not None:
+        video.init(enabled=(video_enabled))
     done = False
     episode_reward = 0
     while not done:
@@ -24,7 +25,9 @@ def run_eval(env, agent, video, video_enabled, args, sample_stochastically=False
             else:
                 action = agent.select_action(obs / 255.0)
             obs, reward, done, _ = env.step(action)
-            video.record(env)
+
+            if video is not None:
+                video.record(env)
             episode_reward += reward
 
     return episode_reward
@@ -46,7 +49,8 @@ def evaluate(env, agent, video, num_episodes, L, step, args, work_dir):
                 sample_stochastically=sample_stochastically,
             )
 
-            video.save("%d.mp4" % step)
+            if video is not None:
+                video.save("%d.mp4" % step)
             L.log("eval/" + prefix + "episode_reward", episode_reward, step)
             all_ep_rewards.append(episode_reward)
 

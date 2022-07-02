@@ -6,10 +6,10 @@ import time
 import json
 import dmc2gym
 import utils
-from evaluate import evaluate
+from evaluation.evaluate import evaluate
 from logger import Logger
 from video import VideoRecorder
-from curl_sac import RadSacAgent, CONTRASTIVE_METHODS
+from curl_sac import CONTRASTIVE_METHODS
 
 
 def parse_args():
@@ -79,49 +79,11 @@ def parse_args():
     return args
 
 
-def make_agent(obs_shape, action_shape, args, device):
-    if args.agent == "rad_sac":
-        return RadSacAgent(
-            obs_shape=obs_shape,
-            action_shape=action_shape,
-            device=device,
-            hidden_dim=args.hidden_dim,
-            discount=args.discount,
-            init_temperature=args.init_temperature,
-            alpha_lr=args.alpha_lr,
-            alpha_beta=args.alpha_beta,
-            actor_lr=args.actor_lr,
-            actor_beta=args.actor_beta,
-            actor_log_std_min=args.actor_log_std_min,
-            actor_log_std_max=args.actor_log_std_max,
-            actor_update_freq=args.actor_update_freq,
-            critic_lr=args.critic_lr,
-            critic_beta=args.critic_beta,
-            critic_tau=args.critic_tau,
-            critic_target_update_freq=args.critic_target_update_freq,
-            encoder_type=args.encoder_type,
-            encoder_feature_dim=args.encoder_feature_dim,
-            encoder_lr=args.encoder_lr,
-            encoder_tau=args.encoder_tau,
-            num_layers=args.num_layers,
-            num_filters=args.num_filters,
-            log_interval=args.log_interval,
-            detach_encoder=args.detach_encoder,
-            latent_dim=args.latent_dim,
-            data_augs=args.data_augs,
-            mode=args.mode,
-        )
-    else:
-        assert "agent is not supported: %s" % args.agent
-
-
 def main():
     args = parse_args()
 
     if args.config_file:
-        config_dict = json.load(open(args.config_file))
-        for key, value in config_dict.items():
-            args.__dict__[key] = value
+        args = utils.set_json_to_args(args=args, config_path=args.config_file)
 
     # Check if multiple contrastive methods are being applied. Only one contrastive method should be applied per agent.
     method_found = False
@@ -222,7 +184,7 @@ def main():
         pre_image_size=pre_image_size,
     )
 
-    agent = make_agent(
+    agent = utils.make_agent(
         obs_shape=obs_shape, action_shape=action_shape, args=args, device=device
     )
 
