@@ -10,3 +10,4 @@
 {"episode": 360.0, "episode_reward": 223.82908691020447, "eval_time": 11.564891815185547, "mean_episode_reward": 223.82908691020444, "best_episode_reward": 329.4239544109167, "step": 45000}
 {"episode": 400.0, "episode_reward": 380.698096834403, "eval_time": 5.4122631549835205, "mean_episode_reward": 380.698096834403, "best_episode_reward": 428.90617883322943, "step": 50000}
 {"episode": 440.0, "episode_reward": 404.7530025653254, "eval_time": 5.360426664352417, "mean_episode_reward": 404.7530025653254, "best_episode_reward": 457.2886502976818, "step": 55000}
+{"episode": 480.0, "episode_reward": 418.22761687705696, "eval_time": 5.41900634765625, "mean_episode_reward": 418.22761687705696, "best_episode_reward": 472.18747599435517, "step": 60000}
