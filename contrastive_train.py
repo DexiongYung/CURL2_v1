@@ -54,10 +54,20 @@ def main():
     )
     agent = load_actor(agent=agent, ckpt_path=args.actor_ckpt_path)
 
+    projection_layer = torch.nn.Sequential(
+        torch.nn.Linear(args.encoder_feature_dim, args.encoder_feature_dim),
+        torch.nn.Linear(args.encoder_feature_dim, args.encoder_feature_dim),
+        torch.nn.Linear(args.encoder_feature_dim, args.encoder_feature_dim),
+    ).to(device=device)
+
+    optimizer_projection = torch.optim.Adam(
+        projection_layer.parameters(), lr=args.encoder_lr
+    )
+
     L = Logger(out_dir, use_tb=False)
 
-    simclr = SimCLR(z_dim=args.encoder_feature_dim, critic=agent.actor)
-    simclr_optimizer = simclr.create_optimizer(lr=args.encoder_lr)
+    # simclr = SimCLR(z_dim=args.encoder_feature_dim, critic=agent.actor)
+    # simclr_optimizer = simclr.create_optimizer(lr=args.encoder_lr)
 
     mse_loss = torch.nn.MSELoss()
 
@@ -105,17 +115,21 @@ def main():
             )
 
             z_anchor = agent.actor.encoder(obses).detach()
-            z_pos = agent.actor.encoder(aug_obses)
-            nce_loss = simclr.compute_NCE_loss(z_anchor=z_anchor, z_pos=z_pos)
+            z_pos = projection_layer.forward(agent.actor.encoder(aug_obses).detach())
+            # nce_loss = simclr.compute_NCE_loss(z_anchor=z_anchor, z_pos=z_pos)
             mse_loss = torch.nn.MSELoss()(z_anchor, z_pos)
 
-            simclr_optimizer.zero_grad()
-            (mse_loss + nce_loss).backward()
-            simclr_optimizer.step()
+            optimizer_projection.zero_grad()
+            mse_loss.backward()
+            optimizer_projection.step()
+
+            # simclr_optimizer.zero_grad()
+            # (mse_loss + nce_loss).backward()
+            # simclr_optimizer.step()
 
             if step % eval_interval == 0:
                 L.log("train/MSE", mse_loss, step)
-                L.log("train/NCE", nce_loss, step)
+                # L.log("train/NCE", nce_loss, step)
 
         if step % eval_interval == 0 and step > init_steps or step == 0:
             evaluate(
