@@ -385,12 +385,11 @@ def random_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
 
 
 def instdisc(imgs):
-    # TODO!!! Not fully done
     imgs_rcj = kornia_color_jitter(
         imgs=imgs, bright=0.4, contrast=0.4, satur=0.2, hue=0.1, p=0.8
     )
     imgs_rg = random_grayscale(images=imgs_rcj, p=0.2)
-    imgs_flip = random_flip(images=imgs_rg, p=3 / 4)
+    imgs_flip = random_rotation(images=imgs_rg, float=3/4)
 
     return imgs_flip
 
