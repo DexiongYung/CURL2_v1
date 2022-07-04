@@ -38,7 +38,7 @@ class SimCLR(nn.Module):
 
     def compute_NCE_loss(self, z_anchor, z_pos):
         logits = self.compute_logits(z_anchor, z_pos)
-        labels = torch.arange(logits.shape[0]).long().to(self.device)
+        labels = torch.arange(logits.shape[0]).long().to(z_anchor.get_device())
         return self.cross_entropy_loss(logits, labels)
 
     def encode(self, x):

@@ -19,25 +19,29 @@ def parse_args():
     parser.add_argument("--total_steps", type=int, default=10000)
     parser.add_argument("--sample_probs", type=float, default=0.5)
     parser.add_argument("--eval_interval", type=int, default=100)
+    parser.add_argument("--init_steps", type=int, default=512)
     parser.add_argument("--out_dir", type=str, default="logs_post_contrastive")
     args = parser.parse_args()
     return args
 
 
 def main():
+    # args
     args = parse_args()
-
     eval_interval = args.eval_interval
+    init_steps = args.init_steps
 
     os.makedirs(args.out_dir, exist_ok=True)
     args = set_json_to_args(args=args, config_path=args.config_file)
 
+    # Environment setup with output dir
     env_name = args.domain_name + "_" + args.task_name
     exp_name = os.path.join(env_name, args.id, f"seed_{args.seed}")
     out_dir = os.path.join(args.out_dir, exp_name)
 
     os.makedirs(out_dir, exist_ok=True)
 
+    # Set device
     device = torch.device(
         f"cuda:{args.device_id}" if torch.cuda.is_available() else "cpu"
     )
@@ -54,6 +58,8 @@ def main():
 
     simclr = SimCLR(z_dim=args.encoder_feature_dim, critic=agent.actor)
     simclr_optimizer = simclr.create_optimizer(lr=args.encoder_lr)
+
+    mse_loss = torch.nn.MSELoss()
 
     # agent_EMA = copy.deepcopy(agent)
     # actor_EMA_optimizer = torch.optim.Adam(
@@ -75,7 +81,7 @@ def main():
             else:
                 action = env.action_space.sample()
 
-        if step > args.init_steps:
+        if step > init_steps:
             (
                 obses,
                 actions,
@@ -98,30 +104,27 @@ def main():
                 idxs=idxs,
             )
 
-            mu, _, _, log_std = agent.actor.forward(obs=obses)
-            aug_mu, _, _, aug_log_std = agent.actor.forward(obs=aug_obses)
-
-            dist_og = torch.normal(mean=mu, std=log_std.exp()).detach()
-            dist_aug = torch.normal(mean=aug_mu, std=aug_log_std.exp())
-
-            kl = torch.kl_div(input=dist_aug, target=dist_og)
-
-            z_anchor = agent.actor.encoder(obses)
+            z_anchor = agent.actor.encoder(obses).detach()
             z_pos = agent.actor.encoder(aug_obses)
             nce_loss = simclr.compute_NCE_loss(z_anchor=z_anchor, z_pos=z_pos)
+            mse_loss = torch.nn.MSELoss()(z_anchor, z_pos)
 
             simclr_optimizer.zero_grad()
-            (kl + nce_loss).backward()
+            (mse_loss + nce_loss).backward()
             simclr_optimizer.step()
 
-        if step % eval_interval == 0:
+            if step % eval_interval == 0:
+                L.log("train/MSE", mse_loss, step)
+                L.log("train/NCE", nce_loss, step)
+
+        if step % eval_interval == 0 and step > init_steps or step == 0:
             evaluate(
                 env=env,
                 agent=agent,
                 video=None,
                 num_episodes=9,
                 L=L,
-                step=0,
+                step=step,
                 args=args,
                 work_dir=args.out_dir,
             )
