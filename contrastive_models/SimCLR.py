@@ -18,9 +18,14 @@ class SIMCLR_projection_MLP(nn.Module):
 
 
 class SimCLR(nn.Module):
-    def __init__(self, z_dim: int, critic) -> None:
+    def __init__(
+        self, z_dim: int, critic, batch_sz: int, temp: float, use_cos: bool
+    ) -> None:
         super(SimCLR, self).__init__()
         self.encoder = critic.encoder
+        self.NTXentLoss = NTXentLoss(
+            batch_size=batch_sz, temperature=temp, use_cosine_similarity=use_cos
+        )
         self.projection_head = SIMCLR_projection_MLP(z_dim=z_dim)
         self.cross_entropy_loss = nn.CrossEntropyLoss()
 
@@ -30,13 +35,7 @@ class SimCLR(nn.Module):
             lr=lr,
         )
 
-    def compute_logits(self, anchor, pos):
-        logits = nn.functional.cosine_similarity(
-            anchor[:, :, None], pos.t()[None, :, :]
-        )
-        return logits
-
-    def compute_NCE_loss(self, z_anchor, z_pos):
+    def compute_NTXent_loss(self, z_anchor, z_pos):
         logits = self.compute_logits(z_anchor, z_pos)
         labels = torch.arange(logits.shape[0]).long().to(z_anchor.get_device())
         return self.cross_entropy_loss(logits, labels)
