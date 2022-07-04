@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 
 
@@ -21,12 +22,24 @@ class SimCLR(nn.Module):
         super(SimCLR, self).__init__()
         self.encoder = critic.encoder
         self.projection_head = SIMCLR_projection_MLP(z_dim=z_dim)
+        self.cross_entropy_loss = nn.CrossEntropyLoss()
 
-    def encode(self, x):
-        return self.projection_head.forward(self.encoder(x))
+    def create_optimizer(self, lr):
+        return torch.optim.Adam(
+            list(self.encoder.parameters()) + list(self.projection_head.parameters()),
+            lr=lr,
+        )
 
     def compute_logits(self, anchor, pos):
         logits = nn.functional.cosine_similarity(
             anchor[:, :, None], pos.t()[None, :, :]
         )
         return logits
+
+    def compute_NCE_loss(self, z_anchor, z_pos):
+        logits = self.compute_logits(z_anchor, z_pos)
+        labels = torch.arange(logits.shape[0]).long().to(self.device)
+        return self.cross_entropy_loss(logits, labels)
+
+    def encode(self, x):
+        return self.projection_head.forward(self.encoder(x))

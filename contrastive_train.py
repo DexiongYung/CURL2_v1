@@ -1,17 +1,12 @@
 import os
+import copy
 import pandas as pd
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
 import torch
 import argparse
 import numpy as np
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
-import matplotlib.pyplot as plt
-import matplotlib
-from numpy import reshape
+import data_augs as rad
 from logger import Logger
-from seaborn import scatterplot
+from contrastive_models.SimCLR import SimCLR
 from evaluation.model_loading import load_actor
 from evaluation.evaluate import evaluate
 from utils import make_agent, set_json_to_args, create_env_and_replay_buffer, eval_mode
@@ -41,6 +36,8 @@ def main():
     exp_name = os.path.join(env_name, args.id, f"seed_{args.seed}")
     out_dir = os.path.join(args.out_dir, exp_name)
 
+    os.makedirs(out_dir, exist_ok=True)
+
     device = torch.device(
         f"cuda:{args.device_id}" if torch.cuda.is_available() else "cpu"
     )
@@ -53,7 +50,18 @@ def main():
     )
     agent = load_actor(agent=agent, ckpt_path=args.actor_ckpt_path)
 
+    L = Logger(out_dir, use_tb=False)
+
+    simclr = SimCLR(z_dim=args.encoder_feature_dim, critic=agent.actor)
+    simclr_optimizer = simclr.create_optimizer(lr=args.encoder_lr)
+
+    # agent_EMA = copy.deepcopy(agent)
+    # actor_EMA_optimizer = torch.optim.Adam(
+    #     agent_EMA.actor.encoder.parameters(), lr=args.encoder_lr
+    # )
+
     done = True
+    augs_func = agent.augs_funcs
 
     for step in range(args.total_steps):
         if done:
@@ -61,14 +69,52 @@ def main():
             done = False
 
         with eval_mode(agent):
-            sample = np.random.rand(1)
+            sample = np.random.rand(1).item()
             if sample > args.sample_probs:
                 action = agent.select_action(obs / 255.0)
             else:
                 action = env.action_space.sample()
 
+        if step > args.init_steps:
+            (
+                obses,
+                actions,
+                rewards,
+                next_obses,
+                not_dones,
+                idxs,
+            ) = replay_buffer.sample_rad(aug_funcs=augs_func, return_idxs=True)
+            (
+                aug_obses,
+                actions,
+                rewards,
+                aug_next_obses,
+                not_dones,
+            ) = replay_buffer.sample_rad(
+                aug_funcs=dict(
+                    crop=dict(func=rad.random_crop, params=dict(out=args.image_size)),
+                    instdisc=dict(func=rad.instdisc, params=dict()),
+                ),
+                idxs=idxs,
+            )
+
+            mu, _, _, log_std = agent.actor.forward(obs=obses)
+            aug_mu, _, _, aug_log_std = agent.actor.forward(obs=aug_obses)
+
+            dist_og = torch.normal(mean=mu, std=log_std.exp()).detach()
+            dist_aug = torch.normal(mean=aug_mu, std=aug_log_std.exp())
+
+            kl = torch.kl_div(input=dist_aug, target=dist_og)
+
+            z_anchor = agent.actor.encoder(obses)
+            z_pos = agent.actor.encoder(aug_obses)
+            nce_loss = simclr.compute_NCE_loss(z_anchor=z_anchor, z_pos=z_pos)
+
+            simclr_optimizer.zero_grad()
+            (kl + nce_loss).backward()
+            simclr_optimizer.step()
+
         if step % eval_interval == 0:
-            L = Logger(out_dir, use_tb=False)
             evaluate(
                 env=env,
                 agent=agent,
