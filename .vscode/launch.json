@@ -58,16 +58,6 @@
             "justMyCode": true,
             "args": ["--config_file", "./configs/vanilla.json"]
         },
-        
-        {
-            "name": "Test Dim Reduction",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/dim_reduction.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args": ["--config_file", "./logs/walker_walk/crop/seed_23/07-01/args.json", "--actor_ckpt_path", "./ckpt/walker_walk/crop/actor_99999.pt"]
-        },
         {
             "name": "Walker Crop",
             "type": "python",

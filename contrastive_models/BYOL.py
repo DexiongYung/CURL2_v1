@@ -49,3 +49,11 @@ class BYOL(nn.Module):
         z_a_norm = F.normalize(z_a, dim=-1, p=2)
         z_pos_norm = F.normalize(z_pos, dim=-1, p=2)
         return 2 - 2 * (z_a_norm * z_pos_norm).sum(dim=-1)
+
+    def create_optimizer(self, lr: float):
+        return torch.optim.Adam(
+            list(self.encoder.parameters())
+            + list(self.online_projection.parameters())
+            + list(self.online_predict.parameters()),
+            lr=lr,
+        )

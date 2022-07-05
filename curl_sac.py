@@ -447,22 +447,12 @@ class RadSacAgent(object):
                     critic_target=self.critic_target,
                 ).to(device=device)
 
-                self.encoder_optimizer = torch.optim.Adam(
-                    list(self.critic.encoder.parameters())
-                    + list(self.BYOL.online_projection.parameters())
-                    + list(self.BYOL.online_predict.parameters()),
-                    lr=encoder_lr,
-                )
+                self.BYOL_optimizer = self.BYOL.create_optimizer(lr=encoder_lr)
             elif SIMCLR_STR in self.mode:
                 self.SIMCLR = SimCLR(z_dim=encoder_feature_dim, critic=self.critic).to(
                     device=device
                 )
-                self.encoder_optimizer = torch.optim.Adam(
-                    self.critic.encoder.parameters(), lr=encoder_lr
-                )
-                self.projection_optimizer = torch.optim.Adam(
-                    self.SIMCLR.parameters(), lr=encoder_lr
-                )
+                self.simCLR_optimizer = self.SIMCLR.create_optimizer(lr=encoder_lr)
         self.cross_entropy_loss = nn.CrossEntropyLoss()
 
         self.train()
@@ -666,14 +656,12 @@ class RadSacAgent(object):
             loss += self.cross_entropy_loss(logits, labels)
             loss /= 2
 
-        self.encoder_optimizer.zero_grad()
-        self.projection_optimizer.zero_grad()
+        self.simCLR_optimizer.zero_grad()
         loss.backward()
-        self.encoder_optimizer.step()
-        self.projection_optimizer.step()
+        self.simCLR_optimizer.step()
 
         if step % self.log_interval == 0:
-            L.log("train/NCE_loss", loss, step)
+            L.log("train/NXTent_loss", loss, step)
 
     def update_BYOL(self, obs_anchor, obs_pos, L, step, is_double=False):
         z_a = self.BYOL.encode(obs_anchor)
@@ -694,9 +682,9 @@ class RadSacAgent(object):
             loss += self.BYOL.compute_L2_MSE(z_a=z_a, z_pos=z_pos).mean()
             loss /= 2
 
-        self.encoder_optimizer.zero_grad()
+        self.BYOL_optimizer.zero_grad()
         loss.backward()
-        self.encoder_optimizer.step()
+        self.BYOL_optimizer.step()
 
         if step % self.log_interval == 0:
             L.log("train/BYOL_L2_MSE_loss", loss, step)
