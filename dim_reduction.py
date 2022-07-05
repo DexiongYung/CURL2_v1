@@ -2,6 +2,7 @@ import os
 from statistics import mean
 import pandas as pd
 from sklearn.cluster import KMeans, DBSCAN
+from sklearn.mixture import GaussianMixture
 from sklearn.metrics import silhouette_score
 import torch
 import argparse
@@ -23,7 +24,7 @@ def parse_args():
     parser.add_argument("--config_file", type=str)
     parser.add_argument("--actor_ckpt_path", type=str)
     parser.add_argument("--total_samples", type=int, default=1000)
-    parser.add_argument("--num_random_samples", type=int, default=500)
+    parser.add_argument("--num_random_samples", type=int, default=0)
     parser.add_argument("--out_dir", type=str, default="t_SNE")
     args = parser.parse_args()
     return args
@@ -62,6 +63,22 @@ def k_means_w_silhouette(z, kmax):
     for k in range(2, kmax + 1):
         kmeans = KMeans(n_clusters=k).fit(z)
         labels = kmeans.labels_
+        curr_sil = silhouette_score(z, labels, metric="euclidean")
+
+        if curr_sil > best_sil:
+            best_sil = curr_sil
+            best_labels = labels
+
+    return best_labels, best_sil
+
+
+def GMM_w_silhouette(z, kmax):
+    best_sil = float("-inf")
+    best_labels = None
+
+    for k in range(2, kmax + 1):
+        gmm = GaussianMixture(n_components=k).fit(z)
+        labels = gmm.predict(z)
         curr_sil = silhouette_score(z, labels, metric="euclidean")
 
         if curr_sil > best_sil:
@@ -155,19 +172,19 @@ def main():
     relu = torch.nn.ReLU()
 
     with torch.no_grad():
-        out_enc = agent.actor.encoder(obses)
-        out_trunk_LL_1 = agent.actor.trunk[0](out_enc)
-        out_trunk_LL_2 = agent.actor.trunk[2](relu(out_trunk_LL_1))
-        out_trunk_LL_3 = agent.actor.trunk[4](relu(out_trunk_LL_2))
-        actions = relu(out_trunk_LL_3)
+        out_enc = agent.actor.encoder(obses).detach().cpu().numpy()
+        # out_trunk_LL_1 = agent.actor.trunk[0](out_enc)
+        # out_trunk_LL_2 = agent.actor.trunk[2](relu(out_trunk_LL_1))
+        # out_trunk_LL_3 = agent.actor.trunk[4](relu(out_trunk_LL_2))
+        # actions = relu(out_trunk_LL_3)
 
     fig, axes = plt.subplots(1, 2, figsize=(15, 5), sharey=True)
     fig.suptitle("t-SNE")
 
-    mu_actions, log_std_actions = actions.chunk(2, dim=-1)
-    mu_actions = mu_actions.detach().cpu().numpy()
-    log_std_actions = log_std_actions.detach().cpu().numpy()
-    radius = log_std_actions.mean() * 2
+    # mu_actions, log_std_actions = actions.chunk(2, dim=-1)
+    # mu_actions = mu_actions.detach().cpu().numpy()
+    # log_std_actions = log_std_actions.detach().cpu().numpy()
+    # radius = log_std_actions.mean() * 2
 
     # create_t_SNE_subplot(z_tensor=out_enc, index=0, title="z encoded", axes=axes)
     # create_t_SNE_subplot(
@@ -186,7 +203,11 @@ def main():
     #     z_tensor=out_enc.detach().cpu().numpy(), labels=best_labels, axes=axes, index=1
     # )
 
-    labels, sil_score = dbscan_w_silhouette(z=mu_actions, eps=radius)
+    # labels, sil_score = dbscan_w_silhouette(z=mu_actions, eps=radius)
+    import time
+    start_time = time.time()
+    labels, sil_score = k_means_w_silhouette(z=out_enc, kmax=50)
+    print("--- %s seconds ---" % (time.time() - start_time))
 
     plt.savefig(f"k_means.png")
 
