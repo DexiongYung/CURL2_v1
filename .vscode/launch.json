@@ -68,6 +68,42 @@
             "args": ["--config_file", "./configs/walker_crop.json"]
         },
         {
+            "name": "Cheetah Crop",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/cheetah_crop.json"]
+        },
+        {
+            "name": "Cheetah CURL",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/cheetah_CURL_crop.json"]
+        },
+        {
+            "name": "Crop",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/crop.json"]
+        },
+        {
+            "name": "Cartpole CURL",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/CURL.json"]
+        },
+        {
             "name": "Test",
             "type": "python",
             "request": "launch",
