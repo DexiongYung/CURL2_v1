@@ -72,3 +72,11 @@ class CURL2(nn.Module):
         logits = torch.matmul(z_a, Wz)  # (B,B)
         logits = logits - torch.max(logits, 1)[0][:, None]
         return logits
+
+    def create_optimizer(self, lr):
+        return torch.optim.Adam(
+            list(self.encoder.parameters())
+            + [self.W]
+            + list(self.online_encoder.parameters()),
+            lr=lr,
+        )

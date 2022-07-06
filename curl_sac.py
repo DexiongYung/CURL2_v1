@@ -418,14 +418,7 @@ class RadSacAgent(object):
                     output_type="continuous",
                 )
 
-                self.encoder_optimizer = torch.optim.Adam(
-                    self.critic.encoder.parameters(), lr=encoder_lr
-                )
-
-                self.cpc_optimizer = torch.optim.Adam(
-                    [self.CURL.W] + list(self.CURL.online_encoder.parameters()),
-                    lr=encoder_lr,
-                )
+                self.contrast_optimizer = self.CURL.create_optimizer(lr=encoder_lr)
                 self.CURL.to(device=self.device)
             elif CURL_STR in self.mode:
                 # create CURL encoder (the 128 batch size is probably unnecessary)
@@ -667,9 +660,7 @@ class RadSacAgent(object):
                     next_obs,
                     not_done,
                     contrastive_kwargs,
-                ) = replay_buffer.sample_contrastive(
-                    use_translate=is_translate
-                )
+                ) = replay_buffer.sample_contrastive(use_translate=is_translate)
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                     self.augs_funcs
