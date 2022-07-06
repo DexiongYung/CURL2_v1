@@ -201,7 +201,6 @@ class ReplayBuffer(Dataset):
         self.full = self.full or self.idx == 0
 
     def sample_proprio(self):
-
         idxs = np.random.randint(
             0, self.capacity if self.full else self.idx, size=self.batch_size
         )
