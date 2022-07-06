@@ -267,6 +267,11 @@ class CURL(nn.Module):
         logits = logits - torch.max(logits, 1)[0][:, None]
         return logits
 
+    def create_optimizer(self, lr):
+        return torch.optim.Adam(
+            list(self.encoder.parameters()) + list(self.parameters()), lr=lr
+        )
+
 
 class RadSacAgent(object):
     """RAD with SAC."""
@@ -433,13 +438,7 @@ class RadSacAgent(object):
                 ).to(self.device)
 
                 # optimizer for critic encoder for reconstruction loss
-                self.encoder_optimizer = torch.optim.Adam(
-                    self.critic.encoder.parameters(), lr=encoder_lr
-                )
-
-                self.cpc_optimizer = torch.optim.Adam(
-                    self.CURL.parameters(), lr=encoder_lr
-                )
+                self.contrast_optimizer = self.CURL.create_optimizer(lr=encoder_lr)
             elif BYOL_STR in self.mode:
                 self.BYOL = BYOL(
                     z_dim=encoder_feature_dim,
@@ -447,12 +446,13 @@ class RadSacAgent(object):
                     critic_target=self.critic_target,
                 ).to(device=device)
 
-                self.BYOL_optimizer = self.BYOL.create_optimizer(lr=encoder_lr)
+                self.contrast_optimizer = self.BYOL.create_optimizer(lr=encoder_lr)
             elif SIMCLR_STR in self.mode:
                 self.SIMCLR = SimCLR(z_dim=encoder_feature_dim, critic=self.critic).to(
                     device=device
                 )
-                self.simCLR_optimizer = self.SIMCLR.create_optimizer(lr=encoder_lr)
+
+                self.contrast_optimizer = self.SIMCLR.create_optimizer(lr=encoder_lr)
         self.cross_entropy_loss = nn.CrossEntropyLoss()
 
         self.train()
@@ -462,6 +462,7 @@ class RadSacAgent(object):
         self.training = training
         self.actor.train(training)
         self.critic.train(training)
+
         try:
             self.CURL.train(training)
         except Exception as e:
@@ -469,6 +470,11 @@ class RadSacAgent(object):
 
         try:
             self.BYOL.train(training)
+        except Exception as e:
+            pass
+
+        try:
+            self.SIMCLR.train(training)
         except Exception as e:
             pass
 
@@ -585,7 +591,7 @@ class RadSacAgent(object):
                 L.log(f"train/pos_sample_avg_cos_similarity{suffix}", pos_sim_mu, step)
                 L.log(f"train/neg_sample_avg_cos_similarity{suffix}", neg_sim_mu, step)
 
-    def update_cpc(self, obs_anchor, obs_pos, L, step, is_double=False):
+    def update_cpc(self, obs_anchor, obs_pos, L, step):
 
         # time flips
         """
@@ -603,29 +609,14 @@ class RadSacAgent(object):
         labels = torch.arange(logits.shape[0]).long().to(self.device)
         loss = self.cross_entropy_loss(logits, labels)
 
-        if is_double:
-            z_a = self.CURL.encode(obs_pos)
-            z_pos = self.CURL.encode(obs_anchor, ema=True)
-
-            self.log_pos_and_neg_dist(
-                z_anchor=z_a, z_pos=z_pos, L=L, step=step, suffix="_reverse"
-            )
-
-            logits = self.CURL.compute_logits(z_a, z_pos)
-            labels = torch.arange(logits.shape[0]).long().to(self.device)
-            loss += self.cross_entropy_loss(logits, labels)
-            loss /= 2
-
-        self.encoder_optimizer.zero_grad()
-        self.cpc_optimizer.zero_grad()
+        self.contrast_optimizer.zero_grad()
         loss.backward()
-        self.encoder_optimizer.step()
-        self.cpc_optimizer.step()
+        self.contrast_optimizer.step()
 
         if step % self.log_interval == 0:
             L.log("train/curl_loss", loss, step)
 
-    def update_SIMCLR(self, obs_anchor, obs_pos, L, step, is_double=False):
+    def update_SIMCLR(self, obs_anchor, obs_pos, L, step):
 
         # time flips
         """
@@ -643,27 +634,14 @@ class RadSacAgent(object):
         labels = torch.arange(logits.shape[0]).long().to(self.device)
         loss = self.cross_entropy_loss(logits, labels)
 
-        if is_double:
-            z_a = self.SIMCLR.encode(obs_pos)
-            z_pos = self.SIMCLR.encode(obs_anchor)
-
-            self.log_pos_and_neg_dist(
-                z_anchor=z_a, z_pos=z_pos, L=L, step=step, suffix="_reverse"
-            )
-
-            logits = self.SIMCLR.compute_logits(z_a, z_pos)
-            labels = torch.arange(logits.shape[0]).long().to(self.device)
-            loss += self.cross_entropy_loss(logits, labels)
-            loss /= 2
-
-        self.simCLR_optimizer.zero_grad()
+        self.contrast_optimizer.zero_grad()
         loss.backward()
-        self.simCLR_optimizer.step()
+        self.contrast_optimizer.step()
 
         if step % self.log_interval == 0:
             L.log("train/NXTent_loss", loss, step)
 
-    def update_BYOL(self, obs_anchor, obs_pos, L, step, is_double=False):
+    def update_BYOL(self, obs_anchor, obs_pos, L, step):
         z_a = self.BYOL.encode(obs_anchor)
         z_pos = self.BYOL.encode(obs_pos, target=True)
 
@@ -671,20 +649,9 @@ class RadSacAgent(object):
 
         loss = self.BYOL.compute_L2_MSE(z_a=z_a, z_pos=z_pos).mean()
 
-        if is_double:
-            z_a = self.BYOL.encode(obs_pos)
-            z_pos = self.BYOL.encode(obs_anchor, target=True)
-
-            self.log_pos_and_neg_dist(
-                z_anchor=z_a, z_pos=z_pos, L=L, step=step, suffix="_reverse"
-            )
-
-            loss += self.BYOL.compute_L2_MSE(z_a=z_a, z_pos=z_pos).mean()
-            loss /= 2
-
-        self.BYOL_optimizer.zero_grad()
+        self.contrast_optimizer.zero_grad()
         loss.backward()
-        self.BYOL_optimizer.step()
+        self.contrast_optimizer.step()
 
         if step % self.log_interval == 0:
             L.log("train/BYOL_L2_MSE_loss", loss, step)
@@ -692,7 +659,6 @@ class RadSacAgent(object):
     def update(self, replay_buffer, L, step):
         if self.encoder_type == "pixel":
             if any(word in self.mode for word in CONTRASTIVE_METHODS):
-                is_max = "max" in self.mode
                 is_translate = "translate" in self.mode
                 (
                     obs,
@@ -702,7 +668,7 @@ class RadSacAgent(object):
                     not_done,
                     contrastive_kwargs,
                 ) = replay_buffer.sample_contrastive(
-                    use_translate=is_translate, use_max=is_max
+                    use_translate=is_translate
                 )
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
@@ -744,14 +710,12 @@ class RadSacAgent(object):
                 )
 
         if step % self.cpc_update_freq == 0:
-            is_double = "double" in self.mode
             if CURL_STR in self.mode:
                 self.update_cpc(
                     obs_anchor=contrastive_kwargs["obs_anchor"],
                     obs_pos=contrastive_kwargs["obs_pos"],
                     L=L,
                     step=step,
-                    is_double=is_double,
                 )
             elif BYOL_STR in self.mode:
                 self.update_BYOL(
@@ -759,7 +723,6 @@ class RadSacAgent(object):
                     obs_pos=contrastive_kwargs["obs_pos"],
                     L=L,
                     step=step,
-                    is_double=is_double,
                 )
             elif SIMCLR_STR in self.mode:
                 self.update_SIMCLR(
@@ -767,7 +730,6 @@ class RadSacAgent(object):
                     obs_pos=contrastive_kwargs["obs_pos"],
                     L=L,
                     step=step,
-                    is_double=is_double,
                 )
 
     def save(self, model_dir, step):

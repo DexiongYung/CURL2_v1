@@ -216,21 +216,10 @@ class ReplayBuffer(Dataset):
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
         return obses, actions, rewards, next_obses, not_dones
 
-    def sample_contrastive(self, use_translate=False, use_max=False):
+    def sample_contrastive(self, use_translate=False):
         max_buffer_sz = self.capacity if self.full else self.idx
         idxs = np.random.randint(0, max_buffer_sz, size=self.cpc_batch_size)
-
-        if use_max:
-            cos_sims = cosine_similarity(
-                X=self.actions[:max_buffer_sz], Y=self.actions[:max_buffer_sz]
-            )
-            cos_sims_mu = np.mean(a=cos_sims, axis=1)
-            partition_idxs = np.argpartition(cos_sims_mu, self.cpc_batch_size)[
-                : self.cpc_batch_size
-            ]
-            obses_contrastive = self.obses[partition_idxs]
-        else:
-            obses_contrastive = self.obses
+        obses_contrastive = self.obses
 
         cpc_idxs = np.random.randint(
             0, len(obses_contrastive), size=self.cpc_batch_size
