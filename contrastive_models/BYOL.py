@@ -31,8 +31,8 @@ class BYOL(nn.Module):
         self.target_projection = BYOL_projection_MLP(z_dim=z_dim)
         self.online_predict = BYOL_projection_MLP(z_dim=z_dim)
 
-    def encode(self, x, detach=False, target=False):
-        if target:
+    def encode(self, x, detach=False, ema=False):
+        if ema:
             with torch.no_grad():
                 z_out = self.encoder_target(x)
                 z_fin = self.target_projection(z_out)

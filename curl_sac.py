@@ -15,7 +15,11 @@ CURL2_STR = "CURL2"
 BYOL_STR = "BYOL"
 SIMCLR_STR = "SIMCLR"
 
+K_MEANS_STR = "k_means"
+CENTROID_STR = "centroid"
+
 CONTRASTIVE_METHODS = [CURL_STR, CURL2_STR, BYOL_STR, SIMCLR_STR]
+CLUSTER_METHODS = [CENTROID_STR, K_MEANS_STR]
 
 
 def gaussian_logprob(noise, log_std):
@@ -260,6 +264,8 @@ class RadSacAgent(object):
         self.encoder_type = encoder_type
         self.data_augs = data_augs
         self.mode = mode
+        self.is_contrast = any(word in self.mode for word in CONTRASTIVE_METHODS)
+        self.is_cluster = any(word in self.mode for word in CLUSTER_METHODS)
 
         aug_to_func = {
             "crop": dict(func=rad.random_crop, params=dict(out=self.image_size)),
@@ -358,7 +364,7 @@ class RadSacAgent(object):
 
     def create_contrast_alg_and_optimizer(self, encoder_feature_dim, encoder_lr):
         if CURL2_STR in self.mode:
-            self.contrast_alg = CURL2(
+            self.contrast_model = CURL2(
                 z_dim=encoder_feature_dim,
                 batch_size=self.latent_dim,
                 critic=self.critic,
@@ -366,11 +372,13 @@ class RadSacAgent(object):
                 output_type="continuous",
             )
 
-            self.contrast_optimizer = self.contrast_alg.create_optimizer(lr=encoder_lr)
-            self.contrast_alg.to(device=self.device)
+            self.contrast_optimizer = self.contrast_model.create_optimizer(
+                lr=encoder_lr
+            )
+            self.contrast_model.to(device=self.device)
         elif CURL_STR in self.mode:
             # create CURL encoder (the 128 batch size is probably unnecessary)
-            self.contrast_alg = CURL(
+            self.contrast_model = CURL(
                 encoder_feature_dim,
                 self.latent_dim,
                 self.critic,
@@ -379,21 +387,27 @@ class RadSacAgent(object):
             ).to(self.device)
 
             # optimizer for critic encoder for reconstruction loss
-            self.contrast_optimizer = self.contrast_alg.create_optimizer(lr=encoder_lr)
+            self.contrast_optimizer = self.contrast_model.create_optimizer(
+                lr=encoder_lr
+            )
         elif BYOL_STR in self.mode:
-            self.contrast_alg = BYOL(
+            self.contrast_model = BYOL(
                 z_dim=encoder_feature_dim,
                 critic=self.critic,
                 critic_target=self.critic_target,
             ).to(device=self.device)
 
-            self.contrast_optimizer = self.contrast_alg.create_optimizer(lr=encoder_lr)
+            self.contrast_optimizer = self.contrast_model.create_optimizer(
+                lr=encoder_lr
+            )
         elif SIMCLR_STR in self.mode:
-            self.contrast_alg = SimCLR(
+            self.contrast_model = SimCLR(
                 z_dim=encoder_feature_dim, critic=self.critic
             ).to(device=self.device)
 
-            self.contrast_optimizer = self.contrast_alg.create_optimizer(lr=encoder_lr)
+            self.contrast_optimizer = self.contrast_model.create_optimizer(
+                lr=encoder_lr
+            )
 
     def train(self, training=True):
         self.training = training
@@ -401,17 +415,17 @@ class RadSacAgent(object):
         self.critic.train(training)
 
         try:
-            self.contrast_alg.train(training)
+            self.contrast_model.train(training)
         except Exception as e:
             pass
 
         try:
-            self.contrast_alg.train(training)
+            self.contrast_model.train(training)
         except Exception as e:
             pass
 
         try:
-            self.contrast_alg.train(training)
+            self.contrast_model.train(training)
         except Exception as e:
             pass
 
@@ -537,12 +551,12 @@ class RadSacAgent(object):
         obs_anchor = torch.cat((obs_anchor, time_anchor), 0)
         obs_pos = torch.cat((obs_anchor, time_pos), 0)
         """
-        z_a = self.contrast_alg.encode(obs_anchor)
-        z_pos = self.contrast_alg.encode(obs_pos, ema=True)
+        z_a = self.contrast_model.encode(obs_anchor)
+        z_pos = self.contrast_model.encode(obs_pos, ema=True)
 
         self.log_pos_and_neg_dist(z_anchor=z_a, z_pos=z_pos, L=L, step=step)
 
-        logits = self.contrast_alg.compute_logits(z_a, z_pos)
+        logits = self.contrast_model.compute_logits(z_a, z_pos)
         labels = torch.arange(logits.shape[0]).long().to(self.device)
         loss = self.cross_entropy_loss(logits, labels)
 
@@ -562,12 +576,12 @@ class RadSacAgent(object):
         obs_anchor = torch.cat((obs_anchor, time_anchor), 0)
         obs_pos = torch.cat((obs_anchor, time_pos), 0)
         """
-        z_a = self.contrast_alg.encode(obs_anchor)
-        z_pos = self.contrast_alg.encode(obs_pos)
+        z_a = self.contrast_model.encode(obs_anchor)
+        z_pos = self.contrast_model.encode(obs_pos)
 
         self.log_pos_and_neg_dist(z_anchor=z_a, z_pos=z_pos, L=L, step=step)
 
-        logits = self.contrast_alg.compute_logits(z_a, z_pos)
+        logits = self.contrast_model.compute_logits(z_a, z_pos)
         labels = torch.arange(logits.shape[0]).long().to(self.device)
         loss = self.cross_entropy_loss(logits, labels)
 
@@ -579,12 +593,12 @@ class RadSacAgent(object):
             L.log("train/NXTent_loss", loss, step)
 
     def update_BYOL(self, obs_anchor, obs_pos, L, step):
-        z_a = self.contrast_alg.encode(obs_anchor)
-        z_pos = self.contrast_alg.encode(obs_pos, target=True)
+        z_a = self.contrast_model.encode(obs_anchor)
+        z_pos = self.contrast_model.encode(obs_pos, ema=True)
 
         self.log_pos_and_neg_dist(z_anchor=z_a, z_pos=z_pos, L=L, step=step)
 
-        loss = self.contrast_alg.compute_L2_MSE(z_a=z_a, z_pos=z_pos).mean()
+        loss = self.contrast_model.compute_L2_MSE(z_a=z_a, z_pos=z_pos).mean()
 
         self.contrast_optimizer.zero_grad()
         loss.backward()
@@ -593,18 +607,45 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log("train/BYOL_L2_MSE_loss", loss, step)
 
+    def update_centroid(self, obs_anchor, aug_obs_list, L, step):
+        centroid = self.contrast_model.encode(x=obs_anchor)
+        loss = 0
+
+        for aug_obs in aug_obs_list:
+            encoded_aug = self.contrast_model.encode(aug_obs, ema=True)
+            loss += nn.MSELoss()(centroid, encoded_aug)
+
+        self.contrast_optimizer.zero_grad()
+        loss.backward()
+        self.contrast_optimizer.step()
+
+        if step % self.log_interval == 0:
+            L.log("train/centroid_MSE_loss", loss, step)
+
     def update(self, replay_buffer, L, step):
         if self.encoder_type == "pixel":
-            if any(word in self.mode for word in CONTRASTIVE_METHODS):
+            if self.is_cluster:
                 is_translate = "translate" in self.mode
-                (
-                    obs,
-                    action,
-                    reward,
-                    next_obs,
-                    not_done,
-                    contrastive_kwargs,
-                ) = replay_buffer.sample_contrastive(use_translate=is_translate)
+                if self.is_cluster:
+                    (
+                        obs,
+                        action,
+                        reward,
+                        next_obs,
+                        not_done,
+                        aug_obs_list,
+                    ) = replay_buffer.sample_cluster(
+                        aug_funcs=self.augs_funcs, use_translate=is_translate
+                    )
+                else:
+                    (
+                        obs,
+                        action,
+                        reward,
+                        next_obs,
+                        not_done,
+                        contrastive_kwargs,
+                    ) = replay_buffer.sample_contrastive(use_translate=is_translate)
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                     self.augs_funcs
@@ -633,46 +674,56 @@ class RadSacAgent(object):
 
             if BYOL_STR in self.mode:
                 utils.soft_update_params(
-                    net=self.contrast_alg.online_projection,
-                    target_net=self.contrast_alg.target_projection,
+                    net=self.contrast_model.online_projection,
+                    target_net=self.contrast_model.target_projection,
                     tau=self.encoder_tau,
                 )
             elif CURL2_STR in self.mode:
                 utils.soft_update_params(
-                    net=self.contrast_alg.online_encoder,
-                    target_net=self.contrast_alg.target_encoder,
+                    net=self.contrast_model.online_encoder,
+                    target_net=self.contrast_model.target_encoder,
                     tau=self.encoder_tau,
                 )
 
-        if step % self.cpc_update_freq == 0:
-            if CURL_STR in self.mode:
-                self.update_cpc(
-                    obs_anchor=contrastive_kwargs["obs_anchor"],
-                    obs_pos=contrastive_kwargs["obs_pos"],
-                    L=L,
-                    step=step,
-                )
-            elif BYOL_STR in self.mode:
-                self.update_BYOL(
-                    obs_anchor=contrastive_kwargs["obs_anchor"],
-                    obs_pos=contrastive_kwargs["obs_pos"],
-                    L=L,
-                    step=step,
-                )
-            elif SIMCLR_STR in self.mode:
-                self.update_SIMCLR(
-                    obs_anchor=contrastive_kwargs["obs_anchor"],
-                    obs_pos=contrastive_kwargs["obs_pos"],
-                    L=L,
-                    step=step,
-                )
+        if step % self.cpc_update_freq == 0 and self.is_contrast:
+            if self.is_cluster:
+                if CENTROID_STR in self.mode:
+                    self.update_centroid(
+                        obs_anchor=obs, aug_obs_list=aug_obs_list, L=L, step=step
+                    )
+                elif K_MEANS_STR in self.mode:
+                    raise NotImplementedError("K-means is not implemented yet")
+            else:
+                if CURL_STR in self.mode:
+                    self.update_cpc(
+                        obs_anchor=contrastive_kwargs["obs_anchor"],
+                        obs_pos=contrastive_kwargs["obs_pos"],
+                        L=L,
+                        step=step,
+                    )
+                elif BYOL_STR in self.mode:
+                    self.update_BYOL(
+                        obs_anchor=contrastive_kwargs["obs_anchor"],
+                        obs_pos=contrastive_kwargs["obs_pos"],
+                        L=L,
+                        step=step,
+                    )
+                elif SIMCLR_STR in self.mode:
+                    self.update_SIMCLR(
+                        obs_anchor=contrastive_kwargs["obs_anchor"],
+                        obs_pos=contrastive_kwargs["obs_pos"],
+                        L=L,
+                        step=step,
+                    )
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
         torch.save(self.critic.state_dict(), "%s/critic_%s.pt" % (model_dir, step))
 
     def save_curl(self, model_dir, step):
-        torch.save(self.contrast_alg.state_dict(), "%s/curl_%s.pt" % (model_dir, step))
+        torch.save(
+            self.contrast_model.state_dict(), "%s/curl_%s.pt" % (model_dir, step)
+        )
 
     def load(self, model_dir, step):
         self.actor.load_state_dict(torch.load("%s/actor_%s.pt" % (model_dir, step)))

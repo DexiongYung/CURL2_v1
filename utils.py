@@ -258,8 +258,53 @@ class ReplayBuffer(Dataset):
 
         return obses, actions, rewards, next_obses, not_dones, contrastive_kwargs
 
-    def sample_rad(self, aug_funcs, idxs=None, return_idxs=False, obs_only=False):
+    def sample_cluster(self, aug_funcs, use_translate=False):
+        # augs specified as flags
+        # curl_sac organizes flags into aug funcs
+        # passes aug funcs into sampler
+        max_buffer_sz = self.capacity if self.full else self.idx
+        idxs = np.random.randint(0, max_buffer_sz, size=self.batch_size)
 
+        obses = self.obses[idxs]
+        next_obses = self.next_obses[idxs]
+
+        if use_translate:
+            obses, translate_idxs = random_translate(
+                imgs=obses, size=self.image_size, return_random_idxs=True
+            )
+            next_obses = random_translate(
+                imgs=next_obses, size=self.image_size, **translate_idxs
+            )
+        else:
+            obses = random_crop(obses, self.image_size)
+            next_obses = random_crop(next_obses, self.image_size)
+
+        obses = torch.as_tensor(obses, device=self.device).float()
+        next_obses = torch.as_tensor(next_obses, device=self.device).float()
+        actions = torch.as_tensor(self.actions[idxs], device=self.device)
+        rewards = torch.as_tensor(self.rewards[idxs], device=self.device)
+        not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
+
+        obses = obses / 255.0
+        next_obses = next_obses / 255.0
+
+        aug_obs_list = list()
+
+        # augmentations go here
+        if aug_funcs:
+            for aug, func_dict in aug_funcs.items():
+                func = func_dict["func"]
+                params = func_dict["params"]
+                # skip crop and cutout augs
+
+                if "crop" in aug or "cutout" in aug or "translate" in aug:
+                    continue
+
+                aug_obs_list.append(func(obses, **params))
+
+        return obses, actions, rewards, next_obses, not_dones, aug_obs_list
+
+    def sample_rad(self, aug_funcs, idxs=None, return_idxs=False, obs_only=False):
         # augs specified as flags
         # curl_sac organizes flags into aug funcs
         # passes aug funcs into sampler
