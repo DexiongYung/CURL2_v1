@@ -266,6 +266,7 @@ class RadSacAgent(object):
         self.mode = mode
         self.is_contrast = any(word in self.mode for word in CONTRASTIVE_METHODS)
         self.is_cluster = any(word in self.mode for word in CLUSTER_METHODS)
+        self.is_other_env = "other" in self.mode
 
         aug_to_func = {
             "crop": dict(func=rad.random_crop, params=dict(out=self.image_size)),
@@ -542,7 +543,7 @@ class RadSacAgent(object):
                 L.log(f"train/pos_sample_avg_cos_similarity{suffix}", pos_sim_mu, step)
                 L.log(f"train/neg_sample_avg_cos_similarity{suffix}", neg_sim_mu, step)
 
-    def update_cpc(self, obs_anchor, obs_pos, L, step):
+    def update_cpc(self, obs_anchor, obs_pos, L, step, obs_other_env=None):
 
         # time flips
         """
@@ -556,7 +557,12 @@ class RadSacAgent(object):
 
         self.log_pos_and_neg_dist(z_anchor=z_a, z_pos=z_pos, L=L, step=step)
 
-        logits = self.contrast_model.compute_logits(z_a, z_pos)
+        if obs_other_env is not None:
+            z_other = self.contrast_model.encode(obs_other_env, ema=True)
+
+        logits = self.contrast_model.compute_logits(
+            z_a, z_pos, use_other_env=self.is_other_env, z_other_env=z_other
+        )
         labels = torch.arange(logits.shape[0]).long().to(self.device)
         loss = self.cross_entropy_loss(logits, labels)
 
@@ -624,7 +630,7 @@ class RadSacAgent(object):
 
     def update(self, replay_buffer, L, step):
         if self.encoder_type == "pixel":
-            if self.is_cluster:
+            if self.is_contrast:
                 is_translate = "translate" in self.mode
                 if self.is_cluster:
                     (
@@ -645,7 +651,9 @@ class RadSacAgent(object):
                         next_obs,
                         not_done,
                         contrastive_kwargs,
-                    ) = replay_buffer.sample_contrastive(use_translate=is_translate)
+                    ) = replay_buffer.sample_contrastive(
+                        use_translate=is_translate, use_other_env=self.is_other_env
+                    )
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                     self.augs_funcs
@@ -700,6 +708,7 @@ class RadSacAgent(object):
                         obs_pos=contrastive_kwargs["obs_pos"],
                         L=L,
                         step=step,
+                        obs_other_env=contrastive_kwargs["obs_other_env"],
                     )
                 elif BYOL_STR in self.mode:
                     self.update_BYOL(

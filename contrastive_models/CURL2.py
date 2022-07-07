@@ -60,7 +60,7 @@ class CURL2(nn.Module):
     # def update_target(self):
     #    utils.soft_update_params(self.encoder, self.encoder_target, 0.05)
 
-    def compute_logits(self, z_a, z_pos):
+    def compute_logits(self, z_a, z_pos, use_other_env=False, z_other_env=None):
         """
         Uses logits trick for CURL:
         - compute (B,B) matrix z_a (W z_pos.T)
@@ -70,7 +70,18 @@ class CURL2(nn.Module):
         """
         Wz = torch.matmul(self.W, z_pos.T)  # (z_dim,B)
         logits = torch.matmul(z_a, Wz)  # (B,B)
-        logits = logits - torch.max(logits, 1)[0][:, None]
+
+        if use_other_env:
+            W_oe = torch.matmul(self.W, z_other_env.T)
+            new_logits = torch.matmul(z_a, W_oe)
+
+            for i in range(logits.shape[0]):
+                new_logits[i, i] = logits[i, i]
+
+            logits = new_logits - torch.max(new_logits, 1)[0][:, None]
+        else:
+            logits = logits - torch.max(logits, 1)[0][:, None]
+
         return logits
 
     def create_optimizer(self, lr):

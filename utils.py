@@ -184,10 +184,28 @@ class ReplayBuffer(Dataset):
         self.actions = np.empty((capacity, *action_shape), dtype=np.float32)
         self.rewards = np.empty((capacity, 1), dtype=np.float32)
         self.not_dones = np.empty((capacity, 1), dtype=np.float32)
+        self.obses_other_env = np.empty((capacity, *obs_shape), dtype=obs_dtype)
 
+        self.idx_other_env = 0
         self.idx = 0
         self.last_save = 0
         self.full = False
+        self.full_other_env = False
+
+        self.other_env = dmc2gym.make(
+            domain_name="hopper",
+            task_name="hop",
+            seed=0,
+            visualize_reward=False,
+            from_pixels=True,
+            height=self.pre_image_size,
+            width=self.pre_image_size,
+            frame_skip=2,
+        )
+
+        self.other_env = FrameStack(self.other_env, int(obs_shape[0] / 3))
+        self.obses_other_env[self.idx_other_env] = self.other_env.reset()
+        self.idx_other_env += 1
 
     def add(self, obs, action, reward, next_obs, done):
 
@@ -199,6 +217,30 @@ class ReplayBuffer(Dataset):
 
         self.idx = (self.idx + 1) % self.capacity
         self.full = self.full or self.idx == 0
+
+    def step_other_env(self):
+        obs, _, done, _ = self.other_env.step(self.other_env.action_space.sample())
+        self.obses_other_env[self.idx_other_env] = obs
+        self.idx_other_env = (self.idx_other_env + 1) % self.capacity
+        self.full_other_env = self.full_other_env or self.idx_other_env == 0
+
+        if done:
+            obs = self.other_env.reset()
+
+    def sample_other_env(self):
+        if not self.full_other_env or self.idx_other_env < self.batch_size:
+            while self.idx_other_env < self.batch_size:
+                self.step_other_env()
+        else:
+            self.step_other_env()
+
+        idxs = np.random.randint(
+            0,
+            self.capacity if self.full_other_env else self.idx_other_env,
+            size=self.batch_size,
+        )
+
+        return self.obses_other_env[idxs]
 
     def sample_proprio(self):
         idxs = np.random.randint(
@@ -215,7 +257,7 @@ class ReplayBuffer(Dataset):
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
         return obses, actions, rewards, next_obses, not_dones
 
-    def sample_contrastive(self, use_translate=False):
+    def sample_contrastive(self, use_translate=False, use_other_env=False):
         max_buffer_sz = self.capacity if self.full else self.idx
         idxs = np.random.randint(0, max_buffer_sz, size=self.cpc_batch_size)
         obses_contrastive = self.obses
@@ -252,8 +294,25 @@ class ReplayBuffer(Dataset):
         anchor = torch.as_tensor(anchor, device=self.device).float()
         pos = torch.as_tensor(pos, device=self.device).float()
 
+        if use_other_env:
+            obs_other_env = self.sample_other_env()
+
+            if use_translate:
+                obs_other_env = random_translate(
+                    imgs=obs_other_env, size=self.image_size
+                )
+            else:
+                obs_other_env = random_crop(obs_other_env, self.image_size)
+            obs_other_env = torch.as_tensor(obs_other_env, device=self.device).float()
+        else:
+            obs_other_env = None
+
         contrastive_kwargs = dict(
-            obs_anchor=anchor, obs_pos=pos, time_anchor=None, time_pos=None
+            obs_anchor=anchor,
+            obs_pos=pos,
+            time_anchor=None,
+            time_pos=None,
+            obs_other_env=obs_other_env,
         )
 
         return obses, actions, rewards, next_obses, not_dones, contrastive_kwargs
