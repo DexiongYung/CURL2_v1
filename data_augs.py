@@ -389,10 +389,20 @@ def instdisc(imgs, return_all: bool = False):
         imgs=imgs, bright=0.4, contrast=0.4, satur=0.2, hue=0.1, p=0.8
     )
     imgs_rg = random_grayscale(images=imgs_rcj, p=0.2)
-    imgs_rotate = random_rotation(images=imgs_rg, p=float(3 / 4))
+    imgs_flip = random_flip(images=imgs_rg, p=float(3 / 4))
 
     if return_all:
-        return [imgs_rcj, imgs_rg, imgs_rotate]
+        return [imgs_rcj, imgs_rg, imgs_flip]
+    else:
+        return imgs_flip
+
+
+def set2(imgs, return_all: bool = False):
+    imgs_conv = random_convolution(imgs=imgs)
+    imgs_rotate = random_rotation(images=imgs_conv, p=float(3 / 4))
+
+    if return_all:
+        return [imgs_conv, imgs_rotate]
     else:
         return imgs_rotate
 
