@@ -50,6 +50,15 @@
             "args": ["--config_file", "./configs/cheetah_BYOL_translate_centroid.json"]
         },
         {
+            "name": "Train BYOL translate centroid instdisc",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/cheetah_BYOL_translate_centroid_instdisc.json"]
+        },
+        {
             "name": "Train CURL2 translate other",
             "type": "python",
             "request": "launch",

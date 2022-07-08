@@ -358,8 +358,11 @@ class ReplayBuffer(Dataset):
 
                 if "crop" in aug or "cutout" in aug or "translate" in aug:
                     continue
-
-                aug_obs_list.append(func(obses, **params))
+                elif "instdisc" in aug:
+                    params["return_all"] = True
+                    aug_obs_list += func(obses, **params)
+                else:
+                    aug_obs_list.append(func(obses, **params))
 
         return obses, actions, rewards, next_obses, not_dones, aug_obs_list
 
