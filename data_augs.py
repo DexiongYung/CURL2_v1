@@ -399,12 +399,12 @@ def instdisc(imgs, return_all: bool = False):
 
 def set2(imgs, return_all: bool = False):
     imgs_conv = random_convolution(imgs=imgs)
-    imgs_rotate = random_rotation(images=imgs_conv, p=float(3 / 4))
+    imgs_flip = random_flip(images=imgs_conv, p=float(1 / 2))
 
     if return_all:
-        return [imgs_conv, imgs_rotate]
+        return [imgs_conv, imgs_flip]
     else:
-        return imgs_rotate
+        return imgs_flip
 
 
 # def crop_translate(imgs, out, return_random_idxs=False, h1s=None, w1s=None):

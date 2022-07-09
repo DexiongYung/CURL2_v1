@@ -1,10 +1,11 @@
 import torch
 import torch.nn as nn
+from contrastive_models.SimCLR import SIMCLR_projection_MLP
 
 
-class CURL2_projection_MLP(nn.Module):
+class MoCo2_projection_MLP(nn.Module):
     def __init__(self, z_dim) -> None:
-        super(CURL2_projection_MLP, self).__init__()
+        super(MoCo2_projection_MLP, self).__init__()
         self.z_dim = z_dim
         self.net = nn.Sequential(
             nn.Linear(z_dim, z_dim), nn.ReLU(), nn.Linear(z_dim, z_dim)
@@ -35,8 +36,8 @@ class CURL2(nn.Module):
         self.encoder_target = critic_target.encoder
 
         self.W = nn.Parameter(torch.rand(z_dim, z_dim))
-        self.online_encoder = CURL2_projection_MLP(z_dim=z_dim)
-        self.target_encoder = CURL2_projection_MLP(z_dim=z_dim)
+        self.online_encoder = SIMCLR_projection_MLP(z_dim=z_dim)
+        self.target_encoder = SIMCLR_projection_MLP(z_dim=z_dim)
         self.output_type = output_type
 
     def encode(self, x, detach=False, ema=False):
