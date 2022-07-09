@@ -33,6 +33,8 @@ class LogCoshLoss(torch.nn.Module):
 
 
 LOSSES = dict(MSE=torch.nn.MSELoss(), L1=torch.nn.L1Loss(), cosh=LogCoshLoss())
+LINEAR_STR = "linear"
+CROSS_ENTROPY_STR = "cross_entropy"
 
 
 class SuperLearnerActor(nn.Module):
@@ -40,11 +42,20 @@ class SuperLearnerActor(nn.Module):
         self,
         encoder_feature_dim,
         image_size,
+        gate,
         pretrained_actor: Actor,
         device,
     ):
         super().__init__()
-        self.super_learner = nn.Linear(encoder_feature_dim * 2, encoder_feature_dim)
+        if gate == LINEAR_STR:
+            out_sz_SL = encoder_feature_dim
+        elif gate == CROSS_ENTROPY_STR:
+            out_sz_SL = 2
+        else:
+            raise NotImplementedError(f"Gate setting: {gate} is not supported")
+
+        self.gate = gate
+        self.super_learner = nn.Linear(encoder_feature_dim * 2, out_sz_SL)
         self.actor = pretrained_actor
         self.encoder2 = copy.deepcopy(self.actor.encoder)
         self.image_size = image_size
@@ -60,12 +71,24 @@ class SuperLearnerActor(nn.Module):
         if detach_encoder:
             x2.detach()
 
-        return self.super_learner(torch.cat((x1, x2), dim=1))
+        out_sl = self.super_learner(torch.cat((x1, x2), dim=1))
+
+        if self.gate == LINEAR_STR:
+            return out_sl
+        else:
+            idxs = torch.argmax(out_sl, dim=1)
+            stack = torch.stack((x1, x2), dim=0)
+            return stack[idxs]
 
     def forward(self, obs, compute_pi=True, compute_log_pi=True):
         obs_enc = self.actor.encoder(obs)
         obs_enc2 = self.encoder2(obs)
         obs_SL = self.super_learner(torch.cat((obs_enc, obs_enc2), dim=1))
+
+        if self.gate == CROSS_ENTROPY_STR:
+            idxs = torch.argmax(obs_SL, dim=1)
+            stack = torch.stack((obs_enc, obs_enc2), dim=0)
+            obs_SL = stack[idxs]
 
         mu, log_std = self.actor.trunk(obs_SL).chunk(2, dim=-1)
 
@@ -130,16 +153,83 @@ class SuperLearnerActor(nn.Module):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--id", type=str)
+    parser.add_argument("--id", type=str, default="test")
     parser.add_argument("--config_file", type=str)
     parser.add_argument("--actor_ckpt_path", type=str)
     parser.add_argument("--loss", type=str, default="MSE")
+    parser.add_argument("--gate", type=str, default="linear")
     parser.add_argument("--total_steps", type=int, default=100000)
     parser.add_argument("--eval_interval", type=int, default=100)
     parser.add_argument("--out_dir", type=str, default="logs_super_learner")
     parser.add_argument("--out_ckpt", type=str, default="super_learner_checkpoints")
     args = parser.parse_args()
     return args
+
+
+def linear_gate_loss(agent, loss_fn, obses, aug_obs_list, L, step, args):
+    super_learner_loss = 0
+
+    super_learner_loss += loss_fn(
+        agent.forward_pretrain_actor_encoder(obses).detach(),
+        agent.forward_super_learner(obses, detach_encoder=True),
+    )
+
+    for aug_obs in aug_obs_list:
+        super_learner_loss += loss_fn(
+            agent.forward_pretrain_actor_encoder(obses).detach(),
+            agent.forward_super_learner(aug_obs),
+        )
+
+    if step % args.log_interval == 0:
+        L.log(f"train/{args.loss}", super_learner_loss, step)
+
+    return super_learner_loss
+
+
+def cross_entropy_gate_loss(
+    agent: SuperLearnerActor, loss_fn, obses, aug_obs_list, L, step, args
+):
+    batch_sz = obses.shape[0]
+    cluster_loss = 0
+    cross_entropy_loss = 0
+    cross_entropy = torch.nn.CrossEntropyLoss()
+    mse = torch.nn.MSELoss(reduction="none")
+
+    out_truth = agent.actor.encoder(obses).detach()
+    out_encoder2 = agent.encoder2(obses).detach()
+    cross_entropy_loss += cross_entropy(
+        agent.super_learner(torch.cat((out_truth, out_encoder2), dim=1)),
+        torch.zeros(batch_sz).to(device=obses.get_device()).long(),
+    )
+
+    for aug_obs in aug_obs_list:
+        out_encoder2 = agent.encoder2(aug_obs)
+        cluster_loss += loss_fn(
+            out_truth,
+            agent.encoder2(aug_obs),
+        )
+        out_pretrain = agent.actor.encoder(aug_obs).detach()
+        out_encoder2 = out_encoder2.detach()
+        stack = torch.stack(
+            (
+                mse(out_truth, out_pretrain).mean(dim=1),
+                mse(out_truth, out_encoder2).mean(dim=1),
+            ),
+            dim=0,
+        )
+        labels = stack.argmin(dim=0).long()
+        cross_entropy_loss += cross_entropy(
+            agent.super_learner(
+                torch.cat((out_pretrain, out_encoder2.detach()), dim=1)
+            ),
+            labels,
+        )
+
+    if step % args.log_interval == 0:
+        L.log(f"train/{args.loss}", cluster_loss, step)
+        L.log("train/CE", cross_entropy_loss, step)
+
+    return cross_entropy_loss + cluster_loss
 
 
 def main():
@@ -181,6 +271,7 @@ def main():
         encoder_feature_dim=args.encoder_feature_dim,
         pretrained_actor=pretrained_actor,
         image_size=args.image_size,
+        gate=args.gate,
         device=device,
     ).to(device)
     optimizer = agent.create_optimizer(lr=args.encoder_lr)
@@ -202,25 +293,30 @@ def main():
                 aug_obs_list,
             ) = replay_buffer.sample_cluster(augs_func, use_translate=True)
 
-            super_learner_loss = 0
-
-            super_learner_loss += loss_fn(
-                agent.forward_pretrain_actor_encoder(obses).detach(),
-                agent.forward_super_learner(obses, detach_encoder=True),
-            )
-
-            for aug_obs in aug_obs_list:
-                super_learner_loss += loss_fn(
-                    agent.forward_pretrain_actor_encoder(obses).detach(),
-                    agent.forward_super_learner(aug_obs),
+            if args.gate == LINEAR_STR:
+                loss = linear_gate_loss(
+                    agent=agent,
+                    loss_fn=loss_fn,
+                    obses=obses,
+                    aug_obs_list=aug_obs_list,
+                    L=L,
+                    step=step,
+                    args=args,
+                )
+            elif args.gate == CROSS_ENTROPY_STR:
+                loss = cross_entropy_gate_loss(
+                    agent=agent,
+                    loss_fn=loss_fn,
+                    obses=obses,
+                    aug_obs_list=aug_obs_list,
+                    L=L,
+                    step=step,
+                    args=args,
                 )
 
             optimizer.zero_grad()
-            super_learner_loss.backward()
+            loss.backward()
             optimizer.step()
-
-            if step % args.log_interval == 0:
-                L.log("train/MSE", super_learner_loss, step)
 
         if step % args.eval_interval == 0 and step > args.init_steps or step == 0:
             evaluate(
