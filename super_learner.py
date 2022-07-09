@@ -1,4 +1,5 @@
 import os
+import math
 import copy
 import torch
 import torch.nn as nn
@@ -14,6 +15,24 @@ from utils import (
     center_translate,
 )
 from curl_sac import Actor, gaussian_logprob, squash
+
+
+def log_cosh_loss(y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
+    def _log_cosh(x: torch.Tensor) -> torch.Tensor:
+        return x + torch.nn.functional.softplus(-2.0 * x) - math.log(2.0)
+
+    return torch.mean(_log_cosh(y_pred - y_true))
+
+
+class LogCoshLoss(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
+        return log_cosh_loss(y_pred, y_true)
+
+
+LOSSES = dict(MSE=torch.nn.MSELoss(), L1=torch.nn.L1Loss(), cosh=LogCoshLoss())
 
 
 class SuperLearnerActor(nn.Module):
@@ -113,6 +132,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_file", type=str)
     parser.add_argument("--actor_ckpt_path", type=str)
+    parser.add_argument("--loss", type=str, default="MSE")
     parser.add_argument("--total_steps", type=int, default=100000)
     parser.add_argument("--eval_interval", type=int, default=100)
     parser.add_argument("--out_dir", type=str, default="logs_super_learner")
@@ -162,7 +182,7 @@ def main():
         device=device,
     ).to(device)
     optimizer = agent.create_optimizer(lr=args.encoder_lr)
-    mse_loss = torch.nn.MSELoss()
+    loss_fn = LOSSES[args.loss]
 
     L = Logger(out_dir, use_tb=False)
 
@@ -182,13 +202,13 @@ def main():
 
             super_learner_loss = 0
 
-            super_learner_loss += mse_loss(
+            super_learner_loss += loss_fn(
                 agent.forward_pretrain_actor_encoder(obses).detach(),
                 agent.forward_super_learner(obses, detach_encoder=True),
             )
 
             for aug_obs in aug_obs_list:
-                super_learner_loss += mse_loss(
+                super_learner_loss += loss_fn(
                     agent.forward_pretrain_actor_encoder(obses).detach(),
                     agent.forward_super_learner(aug_obs),
                 )
