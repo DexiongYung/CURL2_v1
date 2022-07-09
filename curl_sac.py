@@ -559,6 +559,8 @@ class RadSacAgent(object):
 
         if obs_other_env is not None:
             z_other = self.contrast_model.encode(obs_other_env, ema=True)
+        else:
+            z_other = None
 
         logits = self.contrast_model.compute_logits(
             z_a, z_pos, use_other_env=self.is_other_env, z_other_env=z_other
