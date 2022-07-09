@@ -130,6 +130,7 @@ class SuperLearnerActor(nn.Module):
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--id", type=str)
     parser.add_argument("--config_file", type=str)
     parser.add_argument("--actor_ckpt_path", type=str)
     parser.add_argument("--loss", type=str, default="MSE")
@@ -144,13 +145,14 @@ def parse_args():
 def main():
     # args
     args = parse_args()
+    id = args.id
 
     os.makedirs(args.out_dir, exist_ok=True)
     args = set_json_to_args(args=args, config_path=args.config_file)
 
     # Environment setup with output dir
     env_name = args.domain_name + "_" + args.task_name
-    exp_name = os.path.join(env_name, args.id, f"seed_{args.seed}")
+    exp_name = os.path.join(env_name, id, f"seed_{args.seed}")
     out_dir = os.path.join(args.out_dir, exp_name)
     checkpoint_dir = os.path.join(args.out_ckpt, exp_name)
 
