@@ -267,6 +267,8 @@ class RadSacAgent(object):
         self.is_contrast = any(word in self.mode for word in CONTRASTIVE_METHODS)
         self.is_cluster = any(word in self.mode for word in CLUSTER_METHODS)
         self.is_other_env = "other" in self.mode
+        self.aug_obs_only = "aug_obs_only" in self.mode
+        self.aug_next_only = "aug_next_only" in self.mode
 
         aug_to_func = {
             "crop": dict(func=rad.random_crop, params=dict(out=self.image_size)),
@@ -658,7 +660,9 @@ class RadSacAgent(object):
                     )
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
-                    self.augs_funcs
+                    aug_funcs=self.augs_funcs,
+                    aug_obs_only=self.aug_obs_only,
+                    aug_next_only=self.aug_next_only,
                 )
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()

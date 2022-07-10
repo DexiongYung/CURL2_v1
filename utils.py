@@ -366,7 +366,14 @@ class ReplayBuffer(Dataset):
 
         return obses, actions, rewards, next_obses, not_dones, aug_obs_list
 
-    def sample_rad(self, aug_funcs, idxs=None, return_idxs=False, obs_only=False):
+    def sample_rad(
+        self,
+        aug_funcs,
+        idxs=None,
+        return_idxs=False,
+        aug_obs_only=False,
+        aug_next_only=False,
+    ):
         # augs specified as flags
         # curl_sac organizes flags into aug funcs
         # passes aug funcs into sampler
@@ -385,20 +392,15 @@ class ReplayBuffer(Dataset):
                 # apply crop and cutout first
                 if "crop" in aug or "cutout" in aug:
                     obses = func(obses, **params)
-
-                    if not obs_only:
-                        next_obses = func(next_obses, **params)
+                    next_obses = func(next_obses, **params)
                 elif "translate" in aug:
                     og_obses = center_crop_images(obses, self.pre_image_size)
                     obses, rndm_idxs = func(
                         og_obses, self.image_size, return_random_idxs=True
                     )
 
-                    if not obs_only:
-                        og_next_obses = center_crop_images(
-                            next_obses, self.pre_image_size
-                        )
-                        next_obses = func(og_next_obses, self.image_size, **rndm_idxs)
+                    og_next_obses = center_crop_images(next_obses, self.pre_image_size)
+                    next_obses = func(og_next_obses, self.image_size, **rndm_idxs)
 
         obses = torch.as_tensor(obses, device=self.device).float()
         next_obses = torch.as_tensor(next_obses, device=self.device).float()
@@ -420,8 +422,28 @@ class ReplayBuffer(Dataset):
                     continue
 
                 obses = func(obses, **params)
-                if not obs_only:
-                    next_obses = func(next_obses, **params)
+                next_obses = func(next_obses, **params)
+
+        if aug_next_only:
+            obses = self.obses[idxs]
+
+            if "crop" in aug_funcs:
+                obses = center_crop_images(obses, output_size=self.image_size)
+            elif "translate" in aug_funcs:
+                og_obses = center_crop_images(obses, self.pre_image_size)
+                obses = center_translates(og_obses, size=self.image_size)
+
+            obses = torch.as_tensor(obses, device=self.device) / 255.0
+        elif aug_obs_only:
+            next_obses = self.next_obses[idxs]
+
+            if "crop" in aug_funcs:
+                next_obses = center_crop_images(next_obses, output_size=self.image_size)
+            elif "translate" in aug_funcs:
+                og_next_obses = center_crop_images(next_obses, self.pre_image_size)
+                next_obses = center_translates(og_next_obses, size=self.image_size)
+
+            next_obses = torch.as_tensor(next_obses, device=self.device) / 255.0
 
         if return_idxs:
             return obses, actions, rewards, next_obses, not_dones, idxs
