@@ -330,13 +330,13 @@ class ReplayBuffer(Dataset):
         pos = obses.copy()
 
         if use_translate:
-            obses = random_translate(imgs=obses, size=self.image_size)
+            obses, translate_idxs = random_translate(
+                imgs=obses, size=self.image_size, return_random_idxs=True
+            )
             pos = random_translate(imgs=pos, size=self.image_size)
-            # next_obses = random_translate(
-            #     imgs=next_obses, size=self.image_size, **translate_idxs
-            # )
-            next_obses = center_crop_images(next_obses, self.pre_image_size)
-            next_obses = center_translates(next_obses, size=self.image_size)
+            next_obses = random_translate(
+                imgs=next_obses, size=self.image_size, **translate_idxs
+            )
         else:
             obses = random_crop(obses, self.image_size)
             pos = random_crop(imgs=pos, out=self.image_size)
@@ -352,7 +352,7 @@ class ReplayBuffer(Dataset):
 
         obses = obses / 255.0
         next_obses = next_obses / 255.0
-        
+
         aug_obs_list.append(pos)
 
         # augmentations go here
