@@ -1,3 +1,4 @@
+import copy
 import numpy as np
 import torch
 import torch.nn as nn
@@ -6,6 +7,7 @@ import torch.nn.functional as F
 import utils
 from encoder import make_encoder
 from contrastive_models import BYOL, SimCLR, CURL2, CURL
+from contrastive_models.SimCLR import SIMCLR_projection_MLP
 import data_augs as rad
 
 LOG_FREQ = 10000
@@ -69,6 +71,7 @@ class Actor(nn.Module):
         log_std_max,
         num_layers,
         num_filters,
+        is_2_encoder=False,
     ):
         super().__init__()
 
@@ -80,6 +83,9 @@ class Actor(nn.Module):
             num_filters,
             output_logits=True,
         )
+
+        if is_2_encoder:
+            self.encoder_2 = copy.deepcopy(self.encoder).requires_grad_(False)
 
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
@@ -269,6 +275,8 @@ class RadSacAgent(object):
         self.is_other_env = "other" in self.mode
         self.aug_obs_only = "aug_obs_only" in self.mode
         self.aug_next_only = "aug_next_only" in self.mode
+        self.is_double_encoder = "2encoder" in self.mode
+        self.is_translate = "translate" in self.mode
 
         aug_to_func = {
             "crop": dict(func=rad.random_crop, params=dict(out=self.image_size)),
@@ -310,6 +318,7 @@ class RadSacAgent(object):
             actor_log_std_max,
             num_layers,
             num_filters,
+            is_2_encoder=self.is_double_encoder,
         ).to(device)
 
         self.critic = Critic(
@@ -354,6 +363,13 @@ class RadSacAgent(object):
         self.log_alpha_optimizer = torch.optim.Adam(
             [self.log_alpha], lr=alpha_lr, betas=(alpha_beta, 0.999)
         )
+
+        if self.is_double_encoder:
+            self.double_encoder_optimizer = torch.optim.Adam(
+                list(self.actor.encoder_2.parameters())
+                + list(self.actor.encoder.parameters()),
+                lr=encoder_lr,
+            )
 
         if self.encoder_type == "pixel":
             self.create_contrast_alg_and_optimizer(
@@ -416,16 +432,6 @@ class RadSacAgent(object):
         self.training = training
         self.actor.train(training)
         self.critic.train(training)
-
-        try:
-            self.contrast_model.train(training)
-        except Exception as e:
-            pass
-
-        try:
-            self.contrast_model.train(training)
-        except Exception as e:
-            pass
 
         try:
             self.contrast_model.train(training)
@@ -623,7 +629,7 @@ class RadSacAgent(object):
 
         for aug_obs in aug_obs_list:
             encoded_aug = self.contrast_model.encode(aug_obs, ema=True)
-            loss += nn.MSELoss()(centroid, encoded_aug)
+            loss += F.mse_loss(centroid, encoded_aug)
 
         self.contrast_optimizer.zero_grad()
         loss.backward()
@@ -632,32 +638,48 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log("train/centroid_MSE_loss", loss, step)
 
+    def update_double_encoder(self, obs_centroid, obs_cluster, L, step):
+        self.actor.encoder_2.requires_grad_(True)
+        loss = 0
+        centroid = self.actor.encoder(obs_centroid)
+
+        for aug_obs in obs_cluster:
+            point = self.actor.encoder_2(aug_obs)
+            loss += F.mse_loss(point, centroid)
+
+        if step % self.log_interval == 0:
+            L.log("train/centroid_MSE_loss", loss, step)
+
+        self.double_encoder_optimizer.zero_grad()
+        loss.backward()
+        self.double_encoder_optimizer.step()
+
+        self.actor.encoder_2.requires_grad_(False)
+
     def update(self, replay_buffer, L, step):
         if self.encoder_type == "pixel":
             if self.is_contrast:
-                is_translate = "translate" in self.mode
-                if self.is_cluster:
-                    (
-                        obs,
-                        action,
-                        reward,
-                        next_obs,
-                        not_done,
-                        aug_obs_list,
-                    ) = replay_buffer.sample_cluster(
-                        aug_funcs=self.augs_funcs, use_translate=is_translate
-                    )
-                else:
-                    (
-                        obs,
-                        action,
-                        reward,
-                        next_obs,
-                        not_done,
-                        contrastive_kwargs,
-                    ) = replay_buffer.sample_contrastive(
-                        use_translate=is_translate, use_other_env=self.is_other_env
-                    )
+                (
+                    obs,
+                    action,
+                    reward,
+                    next_obs,
+                    not_done,
+                    contrastive_kwargs,
+                ) = replay_buffer.sample_contrastive(
+                    use_translate=self.is_translate, use_other_env=self.is_other_env
+                )
+            elif self.is_cluster or self.is_double_encoder:
+                (
+                    obs,
+                    action,
+                    reward,
+                    next_obs,
+                    not_done,
+                    aug_obs_list,
+                ) = replay_buffer.sample_cluster(
+                    aug_funcs=self.augs_funcs, use_translate=self.is_translate
+                )
             else:
                 obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                     aug_funcs=self.augs_funcs,
@@ -699,7 +721,7 @@ class RadSacAgent(object):
                     tau=self.encoder_tau,
                 )
 
-        if step % self.cpc_update_freq == 0 and self.is_contrast:
+        if step % self.cpc_update_freq == 0:
             if self.is_cluster:
                 if CENTROID_STR in self.mode:
                     self.update_centroid(
@@ -707,7 +729,11 @@ class RadSacAgent(object):
                     )
                 elif K_MEANS_STR in self.mode:
                     raise NotImplementedError("K-means is not implemented yet")
-            else:
+            elif self.is_double_encoder:
+                self.update_double_encoder(
+                    obs_centroid=obs, obs_cluster=aug_obs_list, L=L, step=step
+                )
+            elif self.is_contrast:
                 if CURL_STR in self.mode:
                     self.update_cpc(
                         obs_anchor=contrastive_kwargs["obs_anchor"],
