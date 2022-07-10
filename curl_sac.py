@@ -640,10 +640,12 @@ class RadSacAgent(object):
 
     def update_double_encoder(self, obs_centroid, obs_cluster, L, step):
         self.actor.encoder_2.requires_grad_(True)
-        loss = 0
-        centroid = self.actor.encoder(obs_centroid)
+        centroid = self.critic_target.encoder(obs_centroid)
+        point = self.actor.encoder(obs_cluster[0])
 
-        for aug_obs in obs_cluster:
+        loss = F.mse_loss(point, centroid)
+
+        for aug_obs in obs_cluster[1:]:
             point = self.actor.encoder_2(aug_obs)
             loss += F.mse_loss(point, centroid)
 

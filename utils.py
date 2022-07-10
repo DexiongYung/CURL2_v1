@@ -321,24 +321,30 @@ class ReplayBuffer(Dataset):
         # augs specified as flags
         # curl_sac organizes flags into aug funcs
         # passes aug funcs into sampler
+        aug_obs_list = list()
         max_buffer_sz = self.capacity if self.full else self.idx
         idxs = np.random.randint(0, max_buffer_sz, size=self.batch_size)
 
         obses = self.obses[idxs]
         next_obses = self.next_obses[idxs]
+        pos = obses.copy()
 
         if use_translate:
-            obses, translate_idxs = random_translate(
-                imgs=obses, size=self.image_size, return_random_idxs=True
-            )
-            next_obses = random_translate(
-                imgs=next_obses, size=self.image_size, **translate_idxs
-            )
+            obses = random_translate(imgs=obses, size=self.image_size)
+            pos = random_translate(imgs=pos, size=self.image_size)
+            # next_obses = random_translate(
+            #     imgs=next_obses, size=self.image_size, **translate_idxs
+            # )
+            next_obses = center_crop_images(next_obses, self.pre_image_size)
+            next_obses = center_translates(next_obses, size=self.image_size)
         else:
             obses = random_crop(obses, self.image_size)
-            next_obses = random_crop(next_obses, self.image_size)
+            pos = random_crop(imgs=pos, out=self.image_size)
+            # next_obses = random_crop(next_obses, self.image_size)
+            next_obses = center_crop_images(next_obses, output_size=self.image_size)
 
         obses = torch.as_tensor(obses, device=self.device).float()
+        pos = torch.as_tensor(pos, device=self.device).float()
         next_obses = torch.as_tensor(next_obses, device=self.device).float()
         actions = torch.as_tensor(self.actions[idxs], device=self.device)
         rewards = torch.as_tensor(self.rewards[idxs], device=self.device)
@@ -346,8 +352,8 @@ class ReplayBuffer(Dataset):
 
         obses = obses / 255.0
         next_obses = next_obses / 255.0
-
-        aug_obs_list = list()
+        
+        aug_obs_list.append(pos)
 
         # augmentations go here
         if aug_funcs:
@@ -360,9 +366,9 @@ class ReplayBuffer(Dataset):
                     continue
                 elif "instdisc" in aug:
                     params["return_all"] = True
-                    aug_obs_list += func(obses, **params)
+                    aug_obs_list += func(pos, **params)
                 else:
-                    aug_obs_list.append(func(obses, **params))
+                    aug_obs_list.append(func(pos, **params))
 
         return obses, actions, rewards, next_obses, not_dones, aug_obs_list
 
