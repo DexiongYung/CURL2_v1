@@ -52,9 +52,8 @@ def main():
     args = set_json_to_args(args=args, config_path=args.config_file)
 
     env_name = args.domain_name + "_" + args.task_name
-    exp_name = os.path.join(
-        env_name, str(args.id) + "_" + args.projection, f"seed_{args.seed}"
-    )
+    settings = args.projection + "_double" if args.double else args.projection
+    exp_name = os.path.join(env_name, str(args.id), settings, f"seed_{args.seed}")
     out_dir = os.path.join(args.out_dir, exp_name)
     checkpoint_dir = os.path.join(args.out_ckpt, exp_name)
 
