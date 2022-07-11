@@ -170,10 +170,10 @@
             "name": "Super Learner",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/super_learner.py",
+            "program": "${workspaceFolder}/train_super_learner.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--actor_ckpt_path", "./ckpt/cheetah_run/translate/seed_23/actor_99999.pt", "--config_file", "./configs/cheetah_translate.json"]
+            "args": ["--actor_ckpt_path", "./ckpt/cheetah_run/translate/actor_99999.pt", "--config_file", "./configs/cheetah_translate.json"]
         },
         {
             "name": "Python: Current File",

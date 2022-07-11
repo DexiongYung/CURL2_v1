@@ -1,10 +1,13 @@
 import os
 import time
+import torch
 import utils
 import numpy as np
 
 
-def run_eval(env, agent, video, video_enabled, args, sample_stochastically=False):
+def run_eval(
+    env, agent, video, video_enabled, args, sample_stochastically=False, augs=None
+):
     obs = env.reset()
     if video is not None:
         video.init(enabled=(video_enabled))
@@ -19,11 +22,19 @@ def run_eval(env, agent, video, video_enabled, args, sample_stochastically=False
             obs = utils.center_crop_image(obs, args.pre_transform_image_size)
             # then translate cropped to center
             obs = utils.center_translate(obs, args.image_size)
+
+        obs = obs / 255.0
+
+        if augs:
+            obs_tnsr = torch.FloatTensor(obs).unsqueeze(0)
+            obs_tnsr = augs(obs_tnsr)
+            obs = obs_tnsr.squeeze(0).detach().cpu().numpy()
+
         with utils.eval_mode(agent):
             if sample_stochastically:
-                action = agent.sample_action(obs / 255.0)
+                action = agent.sample_action(obs)
             else:
-                action = agent.select_action(obs / 255.0)
+                action = agent.select_action(obs)
             obs, reward, done, _ = env.step(action)
 
             if video is not None:
@@ -33,7 +44,7 @@ def run_eval(env, agent, video, video_enabled, args, sample_stochastically=False
     return episode_reward
 
 
-def evaluate(env, agent, video, num_episodes, L, step, args, work_dir):
+def evaluate(env, agent, video, num_episodes, L, step, args, work_dir, augs=None):
     all_ep_rewards = []
 
     def run_eval_loop(sample_stochastically=True):
@@ -47,6 +58,7 @@ def evaluate(env, agent, video, num_episodes, L, step, args, work_dir):
                 video_enabled=i == 1,
                 args=args,
                 sample_stochastically=sample_stochastically,
+                augs=augs,
             )
 
             if video is not None:
