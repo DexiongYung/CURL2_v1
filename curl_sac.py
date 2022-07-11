@@ -6,21 +6,21 @@ import torch.nn.functional as F
 
 import utils
 from encoder import make_encoder
-from contrastive_models import BYOL, SimCLR, CURL2, CURL
-from contrastive_models.SimCLR import SIMCLR_projection_MLP
+from contrastive_models import BYOL, MoCo, SimCLR, CURL
 import data_augs as rad
 
 LOG_FREQ = 10000
 
 CURL_STR = "CURL"
-CURL2_STR = "CURL2"
+MOCO2_STR = "MOCO2"
+MOCO3_STR = "MOCO3"
 BYOL_STR = "BYOL"
 SIMCLR_STR = "SIMCLR"
 
 K_MEANS_STR = "k_means"
 CENTROID_STR = "centroid"
 
-CONTRASTIVE_METHODS = [CURL_STR, CURL2_STR, BYOL_STR, SIMCLR_STR]
+CONTRASTIVE_METHODS = [CURL_STR, MOCO2_STR, BYOL_STR, SIMCLR_STR, MOCO3_STR]
 CLUSTER_METHODS = [CENTROID_STR, K_MEANS_STR]
 
 
@@ -270,8 +270,11 @@ class RadSacAgent(object):
         self.encoder_type = encoder_type
         self.data_augs = data_augs
         self.mode = mode
-        self.is_contrast = any(word in self.mode for word in CONTRASTIVE_METHODS)
         self.is_cluster = any(word in self.mode for word in CLUSTER_METHODS)
+        self.is_contrast = (
+            any(word in self.mode for word in CONTRASTIVE_METHODS)
+            and not self.is_cluster
+        )
         self.is_other_env = "other" in self.mode
         self.aug_obs_only = "aug_obs_only" in self.mode
         self.aug_next_only = "aug_next_only" in self.mode
@@ -297,6 +300,7 @@ class RadSacAgent(object):
                 params=dict(bright=0.4, contrast=0.4, satur=0.4, hue=0.5),
             ),
             "instdisc": dict(func=rad.instdisc, params=dict()),
+            "strong": dict(func=rad.strong, params=dict()),
             "no_aug": dict(func=rad.no_aug, params=dict()),
         }
 
@@ -382,13 +386,15 @@ class RadSacAgent(object):
         self.critic_target.train()
 
     def create_contrast_alg_and_optimizer(self, encoder_feature_dim, encoder_lr):
-        if CURL2_STR in self.mode:
-            self.contrast_model = CURL2(
+        if MOCO2_STR in self.mode or MOCO3_STR in self.mode:
+            version = 2 if MOCO2_STR in self.mode else 3
+            self.contrast_model = MoCo(
                 z_dim=encoder_feature_dim,
                 batch_size=self.latent_dim,
                 critic=self.critic,
                 critic_target=self.critic_target,
                 output_type="continuous",
+                version=version,
             )
 
             self.contrast_optimizer = self.contrast_model.create_optimizer(
@@ -624,11 +630,11 @@ class RadSacAgent(object):
             L.log("train/BYOL_L2_MSE_loss", loss, step)
 
     def update_centroid(self, obs_anchor, aug_obs_list, L, step):
-        centroid = self.contrast_model.encode(x=obs_anchor)
+        centroid = self.contrast_model.encode(x=obs_anchor, ema=True)
         loss = 0
 
         for aug_obs in aug_obs_list:
-            encoded_aug = self.contrast_model.encode(aug_obs, ema=True)
+            encoded_aug = self.contrast_model.encode(aug_obs)
             loss += F.mse_loss(centroid, encoded_aug)
 
         self.contrast_optimizer.zero_grad()
@@ -716,7 +722,7 @@ class RadSacAgent(object):
                     target_net=self.contrast_model.target_projection,
                     tau=self.encoder_tau,
                 )
-            elif CURL2_STR in self.mode:
+            elif MOCO2_STR in self.mode or MOCO3_STR in self.mode:
                 utils.soft_update_params(
                     net=self.contrast_model.online_encoder,
                     target_net=self.contrast_model.target_encoder,

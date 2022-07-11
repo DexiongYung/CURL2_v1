@@ -113,6 +113,15 @@
             "args": ["--config_file", "./configs/cheetah_translate_aug_obs_only.json"]
         },
         {
+            "name": "Cheetah MoCo3 Translate",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/cheetah_MOCO3_translate.json"]
+        },
+        {
             "name": "Cheetah 2enc translate RC",
             "type": "python",
             "request": "launch",

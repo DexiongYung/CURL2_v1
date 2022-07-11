@@ -15,11 +15,7 @@ class MoCo2_projection_MLP(nn.Module):
         return self.net(x)
 
 
-class CURL2(nn.Module):
-    """
-    CURL2
-    """
-
+class MoCo(nn.Module):
     def __init__(
         self,
         z_dim,
@@ -27,8 +23,9 @@ class CURL2(nn.Module):
         critic,
         critic_target,
         output_type="continuous",
+        version=2,
     ):
-        super(CURL2, self).__init__()
+        super(MoCo, self).__init__()
         self.batch_size = batch_size
 
         self.encoder = critic.encoder
@@ -36,8 +33,15 @@ class CURL2(nn.Module):
         self.encoder_target = critic_target.encoder
 
         self.W = nn.Parameter(torch.rand(z_dim, z_dim))
-        self.online_encoder = SIMCLR_projection_MLP(z_dim=z_dim)
-        self.target_encoder = SIMCLR_projection_MLP(z_dim=z_dim)
+        if version == 2:
+            self.online_encoder = MoCo2_projection_MLP(z_dim=z_dim)
+            self.target_encoder = MoCo2_projection_MLP(z_dim=z_dim)
+        elif version == 3:
+            self.online_encoder = SIMCLR_projection_MLP(z_dim=z_dim)
+            self.target_encoder = SIMCLR_projection_MLP(z_dim=z_dim)
+        else:
+            raise NotImplementedError("Only versions 2 and 3 of MoCo supported")
+
         self.output_type = output_type
 
     def encode(self, x, detach=False, ema=False):

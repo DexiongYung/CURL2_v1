@@ -4,6 +4,7 @@ import numpy as np
 import dmc2gym
 import gym
 import os
+import data_augs as rad
 from collections import deque
 import random
 from torch.utils.data import Dataset
@@ -317,7 +318,7 @@ class ReplayBuffer(Dataset):
 
         return obses, actions, rewards, next_obses, not_dones, contrastive_kwargs
 
-    def sample_cluster(self, aug_funcs, use_translate=False):
+    def sample_cluster(self, aug_funcs, use_translate=False, anchor_aug_funcs=None):
         # augs specified as flags
         # curl_sac organizes flags into aug funcs
         # passes aug funcs into sampler
@@ -364,7 +365,7 @@ class ReplayBuffer(Dataset):
 
                 if "crop" in aug or "cutout" in aug or "translate" in aug:
                     continue
-                elif "instdisc" in aug:
+                elif "instdisc" in aug or "set2" in aug:
                     params["return_all"] = True
                     aug_obs_list += func(pos, **params)
                 else:

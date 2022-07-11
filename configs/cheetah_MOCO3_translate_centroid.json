@@ -24,7 +24,7 @@
     "eval_freq": 5000,
     "frame_stack": 3,
     "hidden_dim": 1024,
-    "id": "BOYL_translate_centroid_strong",
+    "id": "MOCO3_translate_centroids_weak_strong",
     "image_size": 108,
     "init_steps": 1000,
     "init_temperature": 0.1,
@@ -43,7 +43,7 @@
     "save_config": true,
     "seed": 23,
     "task_name": "run",
-    "mode": "BYOL_translate_centroid",
+    "mode": "MOCO3_translate_centroid",
     "work_dir": "./logs",
     "device_id": 0
 }
