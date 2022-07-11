@@ -9,13 +9,17 @@ from contrastive_models.SimCLR import SIMCLR_projection_MLP
 from contrastive_models.MoCo import MoCo2_projection_MLP
 from contrastive_models.BYOL import BYOL_projection_MLP
 from evaluation.evaluate import evaluate
+from super_learner.LogCoshLoss import LogCoshLoss
 from utils import set_json_to_args, create_env_and_replay_buffer, eval_mode, make_agent
 
 PROJECTION_HEADS = dict(
-    simCLR=SIMCLR_projection_MLP, MoCo2=MoCo2_projection_MLP, BYOL=BYOL_projection_MLP
+    simCLR=SIMCLR_projection_MLP,
+    MoCo2=MoCo2_projection_MLP,
+    BYOL=BYOL_projection_MLP,
+    identity=torch.nn.Identity,
 )
 
-LOSS_FNS = dict(MSE=F.mse_loss, L1=F.l1_loss)
+LOSS_FNS = dict(MSE=F.mse_loss, L1=F.l1_loss, LogCosh=LogCoshLoss())
 
 
 def parse_args():
@@ -35,6 +39,7 @@ def parse_args():
     parser.add_argument("--out_dir", type=str, default="logs_super_learner")
     parser.add_argument("--out_ckpt", type=str, default="super_learner_checkpoints")
     parser.add_argument("--projection", type=str, default="simCLR")
+    parser.add_argument("--double", type=bool, default=False)
     args = parser.parse_args()
     return args
 
@@ -71,9 +76,16 @@ def main():
     agent.actor.load_state_dict(torch.load(args.actor_ckpt_path))
     agent.actor.trunk.requires_grad_(False)
     actor_teacher = copy.deepcopy(agent.actor).requires_grad_(False).to(device)
-    projection = PROJECTION_HEADS[args.projection](z_dim=args.encoder_feature_dim).to(
-        device
-    )
+
+    if args.double:
+        projection = torch.nn.Sequential(
+            PROJECTION_HEADS[args.projection](z_dim=args.encoder_feature_dim),
+            PROJECTION_HEADS[args.projection](z_dim=args.encoder_feature_dim),
+        ).to(device)
+    else:
+        projection = PROJECTION_HEADS[args.projection](
+            z_dim=args.encoder_feature_dim
+        ).to(device)
 
     optimizer = torch.optim.Adam(
         list(agent.actor.encoder.parameters()) + list(projection.parameters()),
