@@ -44,5 +44,6 @@
     "seed": 23,
     "task_name": "run",
     "work_dir": "./logs",
+    "mode": null,
     "device_id": 0
 }
