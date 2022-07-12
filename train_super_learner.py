@@ -105,7 +105,8 @@ def main():
     for step in range(args.total_steps):
         if step > args.init_steps:
             obses, _, _, _, _, aug_obs_list = replay_buffer.sample_cluster(
-                aug_funcs=aug_func, use_translate=True
+                aug_funcs=aug_func,
+                use_translate=args.image_size > args.pre_transform_image_size,
             )
 
             centroid = actor_teacher.encoder(obses)
