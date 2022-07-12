@@ -38,8 +38,9 @@ def parse_args():
     parser.add_argument("--eval_interval", type=int, default=100)
     parser.add_argument("--out_dir", type=str, default="logs_super_learner")
     parser.add_argument("--out_ckpt", type=str, default="super_learner_checkpoints")
-    parser.add_argument("--projection", type=str, default="simCLR")
+    parser.add_argument("--projection", type=str, default="identity")
     parser.add_argument("--double", type=bool, default=False)
+    parser.add_argument("--use_mu", type=bool, default=False)
     args = parser.parse_args()
     return args
 
@@ -106,8 +107,15 @@ def main():
 
             centroid = actor_teacher.encoder(obses)
 
+            if args.use_mu:
+                centroid, _ = actor_teacher.trunk(centroid).chunk(2, dim=-1)
+
             for aug_obs in aug_obs_list[1:]:
                 point = projection(agent.actor.encoder(aug_obs))
+
+                if args.use_mu:
+                    point = actor_teacher.trunk(point).chunk(2, dim=-1)
+
                 loss = LOSS_FNS[args.loss](point, centroid)
 
             optimizer.zero_grad()
