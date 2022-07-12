@@ -1,5 +1,6 @@
 import os
 import copy
+import time
 import torch
 import argparse
 import data_augs as rad
@@ -54,8 +55,10 @@ def main():
 
     env_name = args.domain_name + "_" + args.task_name
     settings = args.projection + "_double" if args.double else args.projection
+    ts = time.gmtime()
+    ts = time.strftime("%m-%d", ts)
     exp_name = os.path.join(
-        env_name, str(args.id), settings, args.loss, f"seed_{args.seed}"
+        env_name, str(args.id), settings, args.loss, f"seed_{args.seed}", ts
     )
     out_dir = os.path.join(args.out_dir, exp_name)
     checkpoint_dir = os.path.join(args.out_ckpt, exp_name)

@@ -353,6 +353,9 @@ class ReplayBuffer(Dataset):
 
         obses = obses / 255.0
         next_obses = next_obses / 255.0
+        # TODO: pos was not normalized before and got 300 reward on random conv with
+        # super learner
+        pos = pos / 255.0
 
         aug_obs_list.append(pos)
 
@@ -372,6 +375,52 @@ class ReplayBuffer(Dataset):
                     aug_obs_list.append(func(pos, **params))
 
         return obses, actions, rewards, next_obses, not_dones, aug_obs_list
+
+    # def sample_super_learner(self, aug_funcs, use_translate=False):
+    #     # augs specified as flags
+    #     # curl_sac organizes flags into aug funcs
+    #     # passes aug funcs into sampler
+    #     aug_obs_list = list()
+    #     max_buffer_sz = self.capacity if self.full else self.idx
+    #     idxs = np.random.randint(0, max_buffer_sz, size=self.batch_size)
+
+    #     obses = self.obses[idxs]
+    #     pos = obses.copy()
+
+    #     if use_translate:
+    #         obses = center_translates(imgs=obses, size=self.image_size)
+    #         pos = center_translates(imgs=pos, size=self.image_size)
+    #     else:
+    #         obses = center_crop_images(obses, output_size=self.image_size)
+    #         pos = center_crop_images(pos, output_size=self.image_size)
+
+    #     obses = torch.as_tensor(obses, device=self.device).float()
+    #     pos = torch.as_tensor(pos, device=self.device).float()
+    #     actions = torch.as_tensor(self.actions[idxs], device=self.device)
+    #     rewards = torch.as_tensor(self.rewards[idxs], device=self.device)
+    #     not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
+
+    #     obses = obses / 255.0
+    #     next_obses = next_obses / 255.0
+
+    #     aug_obs_list.append(pos)
+
+    #     # augmentations go here
+    #     if aug_funcs:
+    #         for aug, func_dict in aug_funcs.items():
+    #             func = func_dict["func"]
+    #             params = func_dict["params"]
+    #             # skip crop and cutout augs
+
+    #             if "crop" in aug or "cutout" in aug or "translate" in aug:
+    #                 continue
+    #             elif "instdisc" in aug or "set2" in aug:
+    #                 params["return_all"] = True
+    #                 aug_obs_list += func(pos, **params)
+    #             else:
+    #                 aug_obs_list.append(func(pos, **params))
+
+    #     return obses, actions, rewards, next_obses, not_dones, aug_obs_list
 
     def sample_rad(
         self,
