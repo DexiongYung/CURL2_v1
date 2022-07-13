@@ -271,17 +271,16 @@ class RadSacAgent(object):
         self.data_augs = data_augs
         self.mode = mode
 
-        if self.mode:
-            self.is_cluster = any(word in self.mode for word in CLUSTER_METHODS)
-            self.is_contrast = (
-                any(word in self.mode for word in CONTRASTIVE_METHODS)
-                and not self.is_cluster
-            )
-            self.is_other_env = "other" in self.mode
-            self.aug_obs_only = "aug_obs_only" in self.mode
-            self.aug_next_only = "aug_next_only" in self.mode
-            self.is_double_encoder = "2encoder" in self.mode
-            self.is_translate = "translate" in self.mode
+        self.is_cluster = any(word in self.mode for word in CLUSTER_METHODS)
+        self.is_contrast = (
+            any(word in self.mode for word in CONTRASTIVE_METHODS)
+            and not self.is_cluster
+        )
+        self.is_other_env = "other" in self.mode
+        self.aug_obs_only = "aug_obs_only" in self.mode
+        self.aug_next_only = "aug_next_only" in self.mode
+        self.is_double_encoder = "2encoder" in self.mode
+        self.is_translate = "translate" in self.mode
 
         aug_to_func = {
             "crop": dict(func=rad.random_crop, params=dict(out=self.image_size)),
