@@ -131,6 +131,15 @@
             "args": ["--config_file", "./configs/cheetah_2enc_trans_RC.json"]
         },
         {
+            "name": "Walker 2enc crop RC",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config_file", "./configs/walker_crop_2encoder.json"]
+        },
+        {
             "name": "Cheetah CURL",
             "type": "python",
             "request": "launch",

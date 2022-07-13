@@ -1,4 +1,4 @@
 {
     "python.formatting.provider": "black",
-    "python.pythonPath": "/home/dyung6/anaconda3/envs/rad/bin/python"
+    "python.pythonPath": "/home/dyung6/anaconda3/envs/dmcgb/bin/python"
 }

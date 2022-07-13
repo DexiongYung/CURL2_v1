@@ -324,6 +324,7 @@ class RadSacAgent(object):
             actor_log_std_max,
             num_layers,
             num_filters,
+            is_2_encoder=self.is_double_encoder,
         ).to(device)
 
         self.critic = Critic(
@@ -762,6 +763,10 @@ class RadSacAgent(object):
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
         torch.save(self.critic.state_dict(), "%s/critic_%s.pt" % (model_dir, step))
+        torch.save(
+            self.critic_target.state_dict(),
+            "%s/critic_target_%s.pt" % (model_dir, step),
+        )
 
     def save_curl(self, model_dir, step):
         torch.save(
