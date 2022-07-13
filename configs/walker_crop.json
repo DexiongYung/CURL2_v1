@@ -44,7 +44,7 @@
     "seed": 23,
     "task_name": "walk",
     "work_dir": "./logs",
-    "mode": null,
+    "mode": "",
     "device_id": 0
 }
 
