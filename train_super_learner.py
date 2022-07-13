@@ -1,5 +1,4 @@
 import os
-import copy
 import time
 import torch
 import argparse
@@ -11,6 +10,7 @@ from contrastive_models.MoCo import MoCo2_projection_MLP
 from contrastive_models.BYOL import BYOL_projection_MLP
 from evaluation.evaluate import evaluate
 from super_learner.LogCoshLoss import LogCoshLoss
+from super_learner.super_learner import SuperLeaner
 from utils import set_json_to_args, create_env_and_replay_buffer, eval_mode, make_agent
 
 PROJECTION_HEADS = dict(
@@ -25,6 +25,7 @@ LOSS_FNS = dict(MSE=F.mse_loss, L1=F.l1_loss, LogCosh=LogCoshLoss())
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--sl_id", type=str, default="test")
     parser.add_argument(
         "--config_file", type=str, default="./configs/cheetah_translate.json"
     )
@@ -39,9 +40,7 @@ def parse_args():
     parser.add_argument("--eval_interval", type=int, default=100)
     parser.add_argument("--out_dir", type=str, default="logs_super_learner")
     parser.add_argument("--out_ckpt", type=str, default="super_learner_checkpoints")
-    parser.add_argument("--projection", type=str, default="identity")
-    parser.add_argument("--double", type=bool, default=False)
-    parser.add_argument("--use_mu", type=bool, default=False)
+    parser.add_argument("--use_pretrain", type=bool, default=True)
     args = parser.parse_args()
     return args
 
@@ -54,11 +53,10 @@ def main():
     args = set_json_to_args(args=args, config_path=args.config_file)
 
     env_name = args.domain_name + "_" + args.task_name
-    settings = args.projection + "_double" if args.double else args.projection
     ts = time.gmtime()
     ts = time.strftime("%m-%d", ts)
     exp_name = os.path.join(
-        env_name, str(args.id), settings, args.loss, f"seed_{args.seed}", ts
+        env_name, str(args.id), args.sl_id, args.loss, f"seed_{args.seed}", ts
     )
     out_dir = os.path.join(args.out_dir, exp_name)
     checkpoint_dir = os.path.join(args.out_ckpt, exp_name)
@@ -79,48 +77,33 @@ def main():
         device=device,
     )
     agent.actor.load_state_dict(torch.load(args.actor_ckpt_path))
-    agent.actor.trunk.requires_grad_(False)
-    actor_teacher = copy.deepcopy(agent.actor).requires_grad_(False).to(device)
+    agent = SuperLeaner(
+        pretrained_actor=agent.actor,
+        image_size=args.image_size,
+        device=device,
+        use_pretrain=args.use_pretrain,
+    ).to(device=device)
 
-    if args.double:
-        projection = torch.nn.Sequential(
-            PROJECTION_HEADS[args.projection](z_dim=args.encoder_feature_dim),
-            PROJECTION_HEADS[args.projection](z_dim=args.encoder_feature_dim),
-        ).to(device)
-    else:
-        projection = PROJECTION_HEADS[args.projection](
-            z_dim=args.encoder_feature_dim
-        ).to(device)
+    optimizer = agent.create_optimizer(lr=args.encoder_lr)
 
-    optimizer = torch.optim.Adam(
-        list(agent.actor.encoder.parameters()) + list(projection.parameters()),
-        lr=args.encoder_lr,
-    )
-
-    augmentation = rad.random_convolution
-    aug_func = dict(rand_conv=dict(func=augmentation, params=dict()))
+    augmentation = rad.no_aug
+    aug_func = dict(rand_conv=dict(func=rad.random_convolution, params=dict()))
     L = Logger(out_dir, use_tb=False)
     done = True
 
     for step in range(args.total_steps):
         if step > args.init_steps:
-            obses, _, _, _, _, aug_obs_list = replay_buffer.sample_cluster(
+            loss = 0
+            obses, aug_obs_list = replay_buffer.sample_super_learner(
                 aug_funcs=aug_func,
                 use_translate=args.image_size > args.pre_transform_image_size,
             )
 
-            centroid = actor_teacher.encoder(obses)
+            centroid = agent.encode(obses, teacher=True)
 
-            if args.use_mu:
-                centroid, _ = actor_teacher.trunk(centroid).chunk(2, dim=-1)
-
-            for aug_obs in aug_obs_list[1:]:
-                point = projection(agent.actor.encoder(aug_obs))
-
-                if args.use_mu:
-                    point = actor_teacher.trunk(point).chunk(2, dim=-1)
-
-                loss = LOSS_FNS[args.loss](point, centroid)
+            for aug_obs in aug_obs_list:
+                point = agent.encode(obs=aug_obs)
+                loss += LOSS_FNS[args.loss](point, centroid)
 
             optimizer.zero_grad()
             loss.backward()

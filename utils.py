@@ -4,13 +4,13 @@ import numpy as np
 import dmc2gym
 import gym
 import os
-import data_augs as rad
 from collections import deque
 import random
 from torch.utils.data import Dataset
 from curl_sac import RadSacAgent
-from sklearn.metrics.pairwise import cosine_similarity
+from distractingmc2gym.wrapper import ColorWrapper
 from data_augs import random_crop, random_translate
+from distractingmc2gym.wrapper import FrameStack as FS
 
 
 def set_json_to_args(args, config_path):
@@ -42,7 +42,8 @@ def create_env_and_replay_buffer(args, device):
 
     # stack several consecutive frames together
     if args.encoder_type == "pixel":
-        env = FrameStack(env, k=args.frame_stack)
+        env = FrameStack(env, args.frame_stack)
+        env = ColorWrapper(env=env, mode="color_hard", seed=args.seed)
 
         action_shape = env.action_space.shape
 
@@ -353,8 +354,6 @@ class ReplayBuffer(Dataset):
 
         obses = obses / 255.0
         next_obses = next_obses / 255.0
-        # TODO: pos was not normalized before and got 300 reward on random conv with
-        # super learner
         pos = pos / 255.0
 
         aug_obs_list.append(pos)
@@ -388,17 +387,17 @@ class ReplayBuffer(Dataset):
         pos = obses.copy()
 
         if use_translate:
-            obses = center_translates(imgs=obses, size=self.image_size)
-            pos = center_translates(imgs=pos, size=self.image_size)
+            obses = random_translate(imgs=obses, size=self.image_size)
+            pos = random_translate(imgs=pos, size=self.image_size)
         else:
-            obses = center_crop_images(obses, output_size=self.image_size)
-            pos = center_crop_images(pos, output_size=self.image_size)
+            obses = random_crop(obses, out=self.image_size)
+            pos = random_crop(pos, out=self.image_size)
 
         obses = torch.as_tensor(obses, device=self.device).float()
         pos = torch.as_tensor(pos, device=self.device).float()
 
         obses = obses / 255.0
-        pos = pos / 255.0
+        # TODO: No normalize pos better?
 
         aug_obs_list = list()
 

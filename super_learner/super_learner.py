@@ -1,43 +1,65 @@
 import copy
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from curl_sac import Actor, gaussian_logprob, squash
+from curl_sac import Actor, weight_init
+import utils
+
+
+class ColorConv(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(3, 3, kernel_size=3, bias=False, padding=1)
+
+    def forward(self, imgs):
+        image_size = imgs.shape[-1]
+        stack_sz = int(imgs.shape[1] / 3)
+        imgs_rgb = imgs.reshape(-1, 3, image_size, image_size)
+        imgs_conv = self.conv(imgs_rgb)
+
+        return imgs_conv.reshape(-1, stack_sz * 3, image_size, image_size)
 
 
 class SuperLeaner(nn.Module):
-    def __init__(self, pretrained_actor: Actor) -> None:
+    def __init__(
+        self, pretrained_actor: Actor, image_size: int, device: str, use_pretrain=True
+    ) -> None:
         super().__init__()
-        self.pretrained_actor = pretrained_actor
-        self.aug_encoder = copy.deepcopy(self.pretrained_actor.encoder)
+        self.actor = pretrained_actor
+        self.teacher_encoder = copy.deepcopy(self.actor.encoder)
+        self.actor.trunk.requires_grad_(False)
+        self.teacher_encoder.requires_grad_(False)
 
-    def forward(self, obs, compute_pi=True, compute_log_pi=True, detach_encoder=False):
-        obs = self.pretrained_actor.encoder(obs, detach=detach_encoder)
+        if not use_pretrain:
+            self.actor.encoder.apply(weight_init)
 
-        mu, log_std = self.pretrained_actor.trunk(obs).chunk(2, dim=-1)
+        self.image_size = image_size
+        self.device = device
 
-        # constrain log_std inside [log_std_min, log_std_max]
-        log_std = torch.tanh(log_std)
-        log_std = self.log_std_min + 0.5 * (self.log_std_max - self.log_std_min) * (
-            log_std + 1
+    def reshape_obs_for_actor(self, obs):
+        if obs.shape[-1] > self.image_size:
+            obs = utils.center_crop_image(obs, self.image_size)
+        elif obs.shape[-1] < self.image_size:
+            obs = utils.center_crop_image(image=obs, output_size=obs.shape[-1])
+            obs = utils.center_translate(image=obs, size=self.image_size)
+
+        obs = torch.FloatTensor(obs).to(self.device)
+        obs = obs.unsqueeze(0)
+
+        return obs
+
+    def select_action(self, obs):
+        obs_reshaped = self.reshape_obs_for_actor(obs=obs)
+        mu, _, _, _ = self.actor.forward(obs=obs_reshaped)
+        return mu.cpu().data.numpy().flatten()
+
+    def encode(self, obs, teacher=False):
+        if teacher:
+            return self.teacher_encoder(obs)
+        else:
+            return self.actor.encoder(obs)
+
+    def create_optimizer(self, lr):
+        return torch.optim.Adam(
+            list(self.actor.encoder.parameters()),
+            lr=lr,
         )
-
-        self.outputs["mu"] = mu
-        self.outputs["std"] = log_std.exp()
-
-        if compute_pi:
-            std = log_std.exp()
-            noise = torch.randn_like(mu)
-            pi = mu + noise * std
-        else:
-            pi = None
-            entropy = None
-
-        if compute_log_pi:
-            log_pi = gaussian_logprob(noise, log_std)
-        else:
-            log_pi = None
-
-        mu, pi, log_pi = squash(mu, pi, log_pi)
-
-        return mu, pi, log_pi, log_std

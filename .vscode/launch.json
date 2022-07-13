@@ -173,7 +173,7 @@
             "program": "${workspaceFolder}/train_super_learner.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--actor_ckpt_path", "./ckpt/cheetah_run/translate/actor_99999.pt", "--config_file", "./configs/cheetah_translate.json"]
+            "args": ["--actor_ckpt_path", "./ckpt/walker_walk/crop/actor_99999.pt", "--config_file", "./configs/walker_crop.json"]
         },
         {
             "name": "Python: Current File",
