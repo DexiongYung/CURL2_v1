@@ -371,9 +371,16 @@ class RadSacAgent(object):
         )
 
         if self.encoder_type == "pixel" and self.mode:
-            self.create_contrast_alg_and_optimizer(
-                encoder_feature_dim=encoder_feature_dim, encoder_lr=encoder_lr
-            )
+            if self.is_double_encoder:
+                self.double_encoder_optimizer = torch.optim.Adam(
+                    list(self.actor.encoder.parameters())
+                    + list(self.actor.encoder_2.parameters()),
+                    lr=encoder_lr,
+                )
+            else:
+                self.create_contrast_alg_and_optimizer(
+                    encoder_feature_dim=encoder_feature_dim, encoder_lr=encoder_lr
+                )
 
         self.cross_entropy_loss = nn.CrossEntropyLoss()
 
