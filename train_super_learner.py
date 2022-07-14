@@ -10,6 +10,7 @@ from contrastive_models.MoCo import MoCo2_projection_MLP
 from contrastive_models.BYOL import BYOL_projection_MLP
 from evaluation.evaluate import evaluate
 from super_learner.LogCoshLoss import LogCoshLoss
+from super_learner.CosSim import cos_sim
 from super_learner.super_learner import SuperLeaner
 from utils import set_json_to_args, create_env_and_replay_buffer, eval_mode, make_agent
 
@@ -20,21 +21,24 @@ PROJECTION_HEADS = dict(
     identity=torch.nn.Identity,
 )
 
-LOSS_FNS = dict(MSE=F.mse_loss, L1=F.l1_loss, LogCosh=LogCoshLoss())
+LOSS_FNS = dict(
+    MSE=F.mse_loss,
+    L1=F.l1_loss,
+    LogCosh=LogCoshLoss(),
+    Cos=cos_sim,
+)
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sl_id", type=str, default="test")
-    parser.add_argument(
-        "--config_file", type=str, default="./configs/cheetah_translate.json"
-    )
+    parser.add_argument("--config_file", type=str, default="./configs/walker_crop.json")
     parser.add_argument(
         "--actor_ckpt_path",
         type=str,
-        default="./ckpt/cheetah_run/translate/actor_99999.pt",
+        default="./ckpt/walker_walk/crop/actor_99999.pt",
     )
-    parser.add_argument("--loss", type=str, default="MSE")
+    parser.add_argument("--loss", type=str, default="Cos")
     parser.add_argument("--gate", type=str, default="cross_entropy")
     parser.add_argument("--total_steps", type=int, default=100000)
     parser.add_argument("--eval_interval", type=int, default=100)
