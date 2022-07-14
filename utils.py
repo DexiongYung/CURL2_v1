@@ -354,7 +354,7 @@ class ReplayBuffer(Dataset):
 
         obses = obses / 255.0
         next_obses = next_obses / 255.0
-        pos = pos / 255.0
+        # pos = pos / 255.0
 
         aug_obs_list.append(pos)
 
