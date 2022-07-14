@@ -63,7 +63,7 @@ def random_overlay(x, alpha: float = 0.5):
         _load_mixup_data(batch_size=x.size(0), image_size=x.size(-1))
     imgs = _get_places_batch(batch_size=x.size(0)).repeat(1, x.size(1) // 3, 1, 1)
 
-    x = ((1 - alpha) * x + (alpha) * imgs)
+    x = (1 - alpha) * x + (alpha) * imgs
 
     return x.reshape(-1, frame_stack * 3, h, w)
 
