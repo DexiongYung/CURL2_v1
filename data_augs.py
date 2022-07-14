@@ -35,30 +35,6 @@ def random_resize_crop(imgs, min=0.5):
     return transforms.Resize(size=h)(img).reshape(b, c, h, w).numpy()
 
 
-# def center_crop_DrAC(imgs, out=116):
-#     _, _, h, _ = imgs.shape
-#     imgs = center_translates(image=imgs, size=out)
-#     return random_crop(imgs=imgs, out=h)
-
-
-# def center_random_crop(imgs, out=84):
-#     """
-#     args:
-#     imgs: np.array shape (B,C,H,W)
-#     out: output size (e.g. 84)
-#     returns np.array
-#     """
-#     n, c, h, w = imgs.shape
-#     crop_max = h - out + 1
-#     w1 = np.random.randint(0, crop_max, n)
-#     h1 = np.random.randint(0, crop_max, n)
-#     cropped = np.empty((n, c, out, out), dtype=imgs.dtype)
-#     for i, (img, w11, h11) in enumerate(zip(imgs, w1, h1)):
-
-#         cropped[i] = img[:, h11 : h11 + out, w11 : w11 + out]
-#     return center_translates(image=cropped, size=h)
-
-
 def grayscale(imgs):
     # imgs: b x c x h x w
     device = imgs.device
@@ -132,30 +108,6 @@ def random_cutout(imgs, min_cut=10, max_cut=30):
         # print(img[:, h11:h11 + h11, w11:w11 + w11].shape)
         cutouts[i] = cut_img
     return cutouts
-
-
-def YDbDr(imgs):
-    # Assumes that RGB is normalzed between [0,1]
-    frame_stack_sz = imgs.shape[1]
-    imgs_rgb = reshape_to_RGB(obs=imgs)
-    imgs_ydbdr = RGB_to_YDbDr(obs_RGB=imgs_rgb)
-    return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
-
-
-def YUV(imgs):
-    # Converts RGB back to 255
-    frame_stack_sz = imgs.shape[1]
-    imgs_rgb = reshape_to_RGB(obs=imgs) * 255.0
-    imgs_ydbdr = RGB_to_YUV(obs_RGB=imgs_rgb) / 255.0
-    return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
-
-
-def YIQ(imgs):
-    # Converts RGB back to 255
-    frame_stack_sz = imgs.shape[1]
-    imgs_rgb = reshape_to_RGB(obs=imgs) * 255.0
-    imgs_ydbdr = RGB_to_YIQ(obs_RGB=imgs_rgb) / 255.0
-    return reshape_to_frame_stack(obs=imgs_ydbdr, frame_stack_sz=frame_stack_sz)
 
 
 def random_cutout_color(imgs, min_cut=10, max_cut=30):
@@ -362,28 +314,6 @@ def random_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
     return outs
 
 
-# def in_frame_translate(imgs, size, return_random_idxs=False, h1s=None, w1s=None):
-#     _, _, _, w = imgs.shape
-#     if return_random_idxs:
-#         outs, dims = random_translate(
-#             imgs=imgs,
-#             size=size,
-#             return_random_idxs=return_random_idxs,
-#             h1s=h1s,
-#             w1s=w1s,
-#         )
-#         return center_crop_images(image=outs, output_size=w), dims
-#     else:
-#         outs = random_translate(
-#             imgs=imgs,
-#             size=size,
-#             return_random_idxs=return_random_idxs,
-#             h1s=h1s,
-#             w1s=w1s,
-#         )
-#         return center_crop_images(image=outs, output_size=w)
-
-
 def instdisc(imgs, return_all: bool = False):
     imgs_rcj = kornia_color_jitter(
         imgs=imgs, bright=0.4, contrast=0.4, satur=0.2, hue=0.1, p=0.8
@@ -405,33 +335,6 @@ def strong(imgs, return_all: bool = False):
         return [imgs_conv, imgs_rotated]
     else:
         return imgs_rotated
-
-
-# def crop_translate(imgs, out, return_random_idxs=False, h1s=None, w1s=None):
-#     _, _, h, _ = imgs.shape
-#     cropped_imgs = random_crop(imgs=imgs, out=out)
-#     return random_translate(
-#         imgs=cropped_imgs,
-#         size=h,
-#         return_random_idxs=return_random_idxs,
-#         h1s=h1s,
-#         w1s=w1s,
-#     )
-
-
-# def translate_center_crop(
-#     imgs, crop_sz=100, return_random_idxs=False, h1s=None, w1s=None
-# ):
-#     _, _, h, _ = imgs.shape
-#     assert crop_sz <= h
-#     cropped_imgs = center_crop_images(image=imgs, output_size=crop_sz)
-#     return random_translate(
-#         imgs=cropped_imgs,
-#         size=h,
-#         return_random_idxs=return_random_idxs,
-#         h1s=h1s,
-#         w1s=w1s,
-#     )
 
 
 def no_aug(x):
