@@ -2,11 +2,70 @@ import numpy as np
 import torch
 import kornia
 import torch.nn as nn
+import torchvision.transforms as TF
+import torchvision.datasets as datasets
 from TransformLayer import ColorJitterLayer
 import torchvision.transforms as transforms
+import torchvision.datasets as datasets
 
 # from utils import center_translates, center_crop_images
 from color_space import *
+
+mixup_dataloader = None
+mixup_iter = None
+
+
+def _load_mixup_data(batch_size=256, image_size=84, num_workers=16, use_val=False):
+    global mixup_dataloader, mixup_iter
+    fp = "./data/COCO/"
+
+    mixup_dataloader = torch.utils.data.DataLoader(
+        datasets.ImageFolder(
+            fp,
+            TF.Compose(
+                [
+                    TF.RandomResizedCrop(image_size),
+                    TF.RandomHorizontalFlip(),
+                    TF.ToTensor(),
+                ]
+            ),
+        ),
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
+    mixup_iter = iter(mixup_dataloader)
+
+
+def _get_places_batch(batch_size):
+    global mixup_iter
+    try:
+        imgs, _ = next(mixup_iter)
+        if imgs.size(0) < batch_size:
+            mixup_iter = iter(mixup_dataloader)
+            imgs, _ = next(mixup_iter)
+    except StopIteration:
+        mixup_iter = iter(mixup_dataloader)
+        imgs, _ = next(mixup_iter)
+    return imgs.cuda()
+
+
+def random_overlay(x, alpha: float = 0.5):
+    """Randomly overlay an image from Places"""
+    global mixup_iter
+    _, c, h, w = x.shape
+
+    x = x.reshape(-1, 3, h, w)
+    frame_stack = int(c / 3)
+
+    if mixup_dataloader is None:
+        _load_mixup_data(batch_size=x.size(0), image_size=x.size(-1))
+    imgs = _get_places_batch(batch_size=x.size(0)).repeat(1, x.size(1) // 3, 1, 1)
+
+    x = ((1 - alpha) * x + (alpha) * imgs)
+
+    return x.reshape(-1, frame_stack * 3, h, w)
 
 
 def random_crop(imgs, out=84):
