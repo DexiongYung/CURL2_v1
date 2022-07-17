@@ -22,7 +22,8 @@ from utils import make_agent, set_json_to_args, create_env_and_replay_buffer, ev
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_file", type=str)
-    parser.add_argument("--actor_ckpt_path", type=str)
+    parser.add_argument("--model_path", type=str)
+    parser.add_argument("--model_step", type=int, default=99999)
     parser.add_argument("--total_samples", type=int, default=1000)
     parser.add_argument("--num_random_samples", type=int, default=0)
     parser.add_argument("--out_dir", type=str, default="t_SNE")
@@ -116,59 +117,7 @@ def create_subplots(size: int, title: str):
     return fig, axes
 
 
-def main():
-    args = parse_args()
-    os.makedirs(args.out_dir, exist_ok=True)
-    args = set_json_to_args(args=args, config_path=args.config_file)
-
-    env_name = args.domain_name + "_" + args.task_name
-    exp_name = os.path.join(env_name, args.id, f"seed_{args.seed}")
-    out_dir = os.path.join(args.out_dir, exp_name)
-
-    device = torch.device(
-        f"cuda:{args.device_id}" if torch.cuda.is_available() else "cpu"
-    )
-    env, replay_buffer = create_env_and_replay_buffer(args=args, device=device)
-    agent = make_agent(
-        obs_shape=(3 * args.frame_stack, args.image_size, args.image_size),
-        action_shape=env.action_space.shape,
-        args=args,
-        device=device,
-    )
-    agent = load_actor(agent=agent, ckpt_path=args.actor_ckpt_path)
-
-    # L = Logger(out_dir, use_tb=False)
-    # evaluate(
-    #     env=env,
-    #     agent=agent,
-    #     video=None,
-    #     num_episodes=9,
-    #     L=L,
-    #     step=0,
-    #     args=args,
-    #     work_dir=args.out_dir,
-    # )
-    done = True
-
-    for step in range(args.total_samples):
-        if done:
-            obs = env.reset()
-            done = False
-
-        with eval_mode(agent):
-            if step > args.num_random_samples:
-                action = agent.select_action(obs / 255.0)
-            else:
-                action = env.action_space.sample()
-
-        next_obs, reward, done, _ = env.step(action)
-        replay_buffer.add(obs, action, reward, next_obs, done)
-        obs = next_obs
-
-    obses = replay_buffer.obses[: replay_buffer.idx]
-    obses = np.unique(obses, axis=0)
-    obses = agent.reshape_obses_for_actor(obs=obses)
-
+def run_actor(agent, obses):
     relu = torch.nn.ReLU()
 
     with torch.no_grad():
@@ -205,11 +154,66 @@ def main():
 
     # labels, sil_score = dbscan_w_silhouette(z=mu_actions, eps=radius)
     import time
+
     start_time = time.time()
     labels, sil_score = k_means_w_silhouette(z=out_enc, kmax=50)
     print("--- %s seconds ---" % (time.time() - start_time))
 
     plt.savefig(f"k_means.png")
+
+
+def main():
+    args = parse_args()
+    os.makedirs(args.out_dir, exist_ok=True)
+    args = set_json_to_args(args=args, config_path=args.config_file)
+
+    env_name = args.domain_name + "_" + args.task_name
+    exp_name = os.path.join(env_name, args.id, f"seed_{args.seed}")
+    out_dir = os.path.join(args.out_dir, exp_name)
+
+    device = torch.device(
+        f"cuda:{args.device_id}" if torch.cuda.is_available() else "cpu"
+    )
+    env, replay_buffer = create_env_and_replay_buffer(args=args, device=device)
+    agent = make_agent(
+        obs_shape=(3 * args.frame_stack, args.image_size, args.image_size),
+        action_shape=env.action_space.shape,
+        args=args,
+        device=device,
+    )
+    agent.load(model_dir=args.model_path, step=args.model_step)
+
+    # L = Logger(out_dir, use_tb=False)
+    # evaluate(
+    #     env=env,
+    #     agent=agent,
+    #     video=None,
+    #     num_episodes=9,
+    #     L=L,
+    #     step=0,
+    #     args=args,
+    #     work_dir=args.out_dir,
+    # )
+    done = True
+
+    for step in range(args.total_samples):
+        if done:
+            obs = env.reset()
+            done = False
+
+        with eval_mode(agent):
+            if step > args.num_random_samples:
+                action = agent.select_action(obs / 255.0)
+            else:
+                action = env.action_space.sample()
+
+        next_obs, reward, done, _ = env.step(action)
+        replay_buffer.add(obs, action, reward, next_obs, done)
+        obs = next_obs
+
+    obses = replay_buffer.obses[: replay_buffer.idx]
+    obses = np.unique(obses, axis=0)
+    obses = agent.reshape_obses_for_actor(obs=obses)
 
 
 if __name__ == "__main__":

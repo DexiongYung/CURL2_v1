@@ -3,6 +3,10 @@ Skynet Side:
 tensorboard --logdir ./logs --port 6001
 
 Local:
+W3:
+ssh -N -f -L localhost:16006:localhost:6001 dyung6@143.215.131.34
+
+Skynet:
 ssh -N -f -L localhost:16006:localhost:6001 dyung6@sky1.cc.gatech.edu
 
 # How to remote access Tensorboard running on server
