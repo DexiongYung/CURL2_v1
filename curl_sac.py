@@ -520,10 +520,9 @@ class RadSacAgent(object):
         if step % self.log_interval == 0:
             L.log("train_actor/loss", actor_loss, step)
             L.log("train_actor/target_entropy", self.target_entropy, step)
-        entropy = 0.5 * log_std.shape[1] * (1.0 + np.log(2 * np.pi)) + log_std.sum(
-            dim=-1
-        )
-        if step % self.log_interval == 0:
+            entropy = 0.5 * log_std.shape[1] * (1.0 + np.log(2 * np.pi)) + log_std.sum(
+                dim=-1
+            )
             L.log("train_actor/entropy", entropy.mean(), step)
 
         # optimize the actor

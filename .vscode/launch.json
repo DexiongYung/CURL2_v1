@@ -185,6 +185,15 @@
             "args": ["--actor_ckpt_path", "./ckpt/walker_walk/crop/actor_99999.pt", "--config_file", "./configs/walker_crop.json"]
         },
         {
+            "name": "Dimension Reduction",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/dim_reduction.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--model_dir", "./ckpt/walker_walk/crop/", "--config_file", "./configs/walker_crop.json"]
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
