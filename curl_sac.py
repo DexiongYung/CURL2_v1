@@ -302,6 +302,7 @@ class RadSacAgent(object):
             ),
             "instdisc": dict(func=rad.instdisc, params=dict()),
             "strong": dict(func=rad.strong, params=dict()),
+            "shift": dict(func=rad.random_shift, params=dict()),
             "no_aug": dict(func=rad.no_aug, params=dict()),
         }
 

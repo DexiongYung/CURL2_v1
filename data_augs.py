@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import kornia
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision.transforms as TF
 import torchvision.datasets as datasets
 from TransformLayer import ColorJitterLayer
@@ -49,6 +50,13 @@ def _get_places_batch(batch_size):
         mixup_iter = iter(mixup_dataloader)
         imgs, _ = next(mixup_iter)
     return imgs.cuda()
+
+
+def random_shift(imgs, pad=4):
+    """Vectorized random shift, imgs: (B,C,H,W), pad: #pixels"""
+    _, _, h, w = imgs.shape
+    imgs = F.pad(imgs, (pad, pad, pad, pad), mode="replicate")
+    return kornia.augmentation.RandomCrop((h, w))(imgs)
 
 
 def random_overlay(x, alpha: float = 0.5):
